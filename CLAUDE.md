@@ -97,7 +97,13 @@ scripts/
 ├── record_orderbook.py         # L2 WebSocket data recorder CLI
 ├── run_ob_backtest.py          # Order book replay backtest CLI
 ├── daily_reoptimize.py         # Nightly auto-reoptimizer (144 combos/asset)
-└── backtest_supervisor.py      # Meta-supervisor simulation + scoring
+├── backtest_supervisor.py      # Meta-supervisor simulation + scoring (V3 tuning)
+├── tune_supervisor.py          # Supervisor variant comparison (6 configs)
+├── monthly_breakdown.py        # Per-month per-asset raw backtests
+├── monthly_supervisor.py       # Monthly view with supervisor + compound
+├── fee_comparison.py           # Rebate vs cost vs zero fee comparison
+├── detailed_backtest.py        # Full per-asset stats (fees, volume, risk, spread)
+└── _calc_fees.py               # Supervisor gross/fee/net calculator
 
 deploy/
 ├── README.md                   # AWS deployment step-by-step guide
@@ -112,51 +118,65 @@ tests/                          # 343 tests across 16 test files
 
 ## Phase Status
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| **Phase 1** | Core MM engine (quoter, inventory, risk, backtester) | ✅ DONE |
-| **Phase 2** | Adaptive MM, directional bias, book imbalance, multi-asset | ✅ DONE |
-| **Phase 3** | Cross-exchange arb (multi-venue quoting) | ⏭️ SKIPPED (testnet unusable) |
-| **Phase 4.1** | Historical order book data collection | ✅ DONE (L2 WebSocket recorder) |
-| **Phase 4.2** | MM backtester (order book replay) | ✅ DONE (tick-level, queue position) |
-| **Phase 4.3** | ML-based spread prediction | ✅ DONE (GBM, AUC 0.77) |
-| **Phase 4.4** | Toxicity detection (adverse selection) | ✅ DONE (per-side EMA tracking) |
-| **Phase 4.5** | Auto-parameter tuning | ✅ DONE (runtime self-adjustment) |
-| **Phase 5.1** | Partial fills | ✅ DONE (depth-based, 30% threshold) |
-| **Phase 5.2** | DynamicSizer (adaptive order sizing) | ✅ DONE (76 tests) |
-| **Phase 5.3** | Compound mode (PnL reinvestment) | ✅ DONE (BTC/ETH only) |
-| **Phase 5.4** | Daily auto-reoptimizer + hot reload | ✅ DONE (144 combos, drift safety) |
-| **Phase 5.5** | Meta-supervisor (capital + risk allocation) | ✅ DONE (dual control, +21.6%) |
+| Phase         | Description                                        | Status                             |
+|---------------|----------------------------------------------------|------------------------------------|
+| **Phase 1**   | Core MM engine (quoter, inventory, risk, backtester) | ✅ DONE                          |
+| **Phase 2**   | Adaptive MM, directional bias, book imbalance      | ✅ DONE                            |
+| **Phase 3**   | Cross-exchange arb (multi-venue quoting)            | ⏭️ SKIPPED (testnet unusable)     |
+| **Phase 4.1** | Historical order book data collection               | ✅ DONE (L2 WebSocket recorder)   |
+| **Phase 4.2** | MM backtester (order book replay)                   | ✅ DONE (tick-level, queue pos)   |
+| **Phase 4.3** | ML-based spread prediction                          | ✅ DONE (GBM, AUC 0.77)          |
+| **Phase 4.4** | Toxicity detection (adverse selection)              | ✅ DONE (per-side EMA tracking)   |
+| **Phase 4.5** | Auto-parameter tuning                               | ✅ DONE (runtime self-adjustment) |
+| **Phase 5.1** | Partial fills                                       | ✅ DONE (depth-based, 30%)        |
+| **Phase 5.2** | DynamicSizer (adaptive order sizing)                | ✅ DONE (76 tests)                |
+| **Phase 5.3** | Compound mode (PnL reinvestment)                    | ✅ DONE (BTC/ETH only)            |
+| **Phase 5.4** | Daily auto-reoptimizer + hot reload                 | ✅ DONE (144 combos, drift safety)|
+| **Phase 5.5** | Meta-supervisor (capital + risk allocation)          | ✅ DONE (V3 tuning, +21.4%)      |
 
 ## Current Performance
 
-### Per-Asset ($10K capital, optimized, 225-365d)
+### Per-Asset ($12.5K capital, 365d, real fee +0.015%)
 
-| Asset | Net PnL | Sharpe | Profitable | Period |
-|-------|---------|--------|------------|--------|
-| ETH | $11,554 | 10.9 | 81% | 365d |
-| XRP | $11,033 | 12.5 | 83% | 365d |
-| BTC | $10,536 | 17.5 | 90% | 365d |
-| SOL | $9,253 | 10.8 | 78% | 365d |
-| ~~HYPE~~ | ~~$5,774~~ | ~~9.1~~ | ~~73%~~ | ~~225d~~ | *removed* |
+| Asset      | Gross PnL |   Fees  | Net PnL  | Return | Sharpe | Compound |
+|------------|-----------|---------|----------|--------|--------|----------|
+| ETH        |   $16,045 |  $4,077 |  $11,969 |  95.8% |    9.0 | ON       |
+| XRP        |   $16,225 |  $4,238 |  $11,986 |  95.9% |    9.1 | OFF      |
+| SOL        |   $15,372 |  $4,547 |  $10,823 |  86.6% |   10.7 | OFF      |
+| BTC        |   $12,109 |  $3,030 |   $9,080 |  72.6% |   11.0 | ON       |
+| ~~HYPE~~   |         — |       — |        — |      — |      — | *removed* |
 
-### Portfolio ($50K, 4 assets, real fee +0.015%, supervisor V3 + compound)
+### Portfolio ($50K, 4 assets, 365d, real fee +0.015%)
 
-| Strategy | Net PnL | Return | Sharpe | Period |
-|----------|---------|--------|--------|--------|
-| Equal (baseline) | $65,063 | 130.1% | 14.8 | 365d |
-| **Supervisor V3 + compound** | **$65,440** | **130.9%** | **14.9** | **365d** |
-| Old V0 supervisor | $60,944 | 121.9% | 14.4 | 365d |
+| Strategy                       |     Gross |     Fees |      Net | Return | Sharpe |
+|--------------------------------|-----------|----------|----------|--------|--------|
+| Equal (baseline)               |   $70,316 |  $18,703 |  $51,613 | 103.2% |   16.4 |
+| **Supervisor V3 + compound**   |   **$85,380** | **$22,710** | **$62,670** | **125.3%** | **16.1** |
+| Old V0 supervisor              |         — |        — |  $60,944 | 121.9% |   14.4 |
+
+### Trading Activity (365d, $50K)
+
+| Metric          |          Value |
+|-----------------|----------------|
+| Total Fills     |         72,142 |
+| Fills/day       |            198 |
+| Round Trips     |         43,924 |
+| Total Volume    |        $135.3M |
+| Volume/day      |          $371K |
+| Fees total      |        $15,891 |
+| Fee % of Gross  |          26.6% |
+| Net profit/fill |         $0.608 |
+| Fee cost/fill   |         $0.220 |
 
 ### Optimizer Results ($1K base)
 
-| Asset | Spread | Skew | Bias | Size | PnL | Compound |
-|-------|--------|------|------|------|-----|----------|
-| BTC | 2.0 | 0.3 | 0.2 | 150 | $1,206 | ON |
-| ETH | 1.5 | 0.3 | 0.2 | 150 | $1,269 | ON |
-| SOL | 1.5 | 0.5 | OFF | 150 | $1,197 | OFF |
-| XRP | 1.5 | 0.5 | 0.2 | 150 | $1,228 | OFF |
-| ~~HYPE~~ | — | — | — | — | — | *removed: poor performance* |
+| Asset      | Spread | Skew | Bias | Size |    PnL | Compound |
+|------------|--------|------|------|------|--------|----------|
+| BTC        |    2.0 |  0.3 |  0.2 |  150 | $1,206 | ON       |
+| ETH        |    1.5 |  0.3 |  0.2 |  150 | $1,269 | ON       |
+| SOL        |    1.5 |  0.5 |  OFF |  150 | $1,197 | OFF      |
+| XRP        |    1.5 |  0.5 |  0.2 |  150 | $1,228 | OFF      |
+| ~~HYPE~~   |      — |    — |    — |    — |      — | *removed* |
 
 ## Key Parameters
 
@@ -179,13 +199,13 @@ max_daily_loss=capital*0.05 # Auto-scaled 5% of capital
 Bot fetches `szDecimals` from HL `meta()` on connect + hourly refresh. No hardcoded decimals.
 Formula: `price_decimals = 6 - szDecimals`, prices capped at 5 significant figures.
 
-| Asset | szDecimals | Price Decimals | Size Decimals |
-|-------|-----------|----------------|---------------|
-| BTC | 5 | 1 | 5 |
-| ETH | 4 | 2 | 4 |
-| SOL | 2 | 4 | 2 |
-| XRP | 0 | 6 | 0 (integers) |
-| HYPE | 2 | 4 | 2 |
+| Asset | szDecimals | Price Decimals | Size Decimals   |
+|-------|------------|----------------|-----------------|
+| BTC   |          5 |              1 | 5               |
+| ETH   |          4 |              2 | 4               |
+| SOL   |          2 |              4 | 2               |
+| XRP   |          0 |              6 | 0 (integers)    |
+| HYPE  |          2 |              4 | 2               |
 
 Symbol resolution is automatic: `XYZUSDT` → strips suffix → validates against HL universe.
 New assets can be added to `.env` without code changes.
@@ -226,19 +246,19 @@ New assets can be added to `.env` without code changes.
 
 ### Dual Control: Capital + Risk (V3_CONSERVATIVE tuning)
 
-| Mechanizm | Szybkość | Wpływ | Limity |
-|-----------|----------|-------|--------|
-| **Kapitał** (alokacja bazowa) | Wolny (max ±5%/dzień) | Ile $ per bot | min $5K, max 35% |
-| **Ryzyko** (mnożniki) | Szybki (max ±10%/dzień) | Size, spread, max_pos | bounds enforced |
+| Mechanizm               | Szybkość             | Wpływ               | Limity          |
+|--------------------------|----------------------|----------------------|-----------------|
+| **Kapitał** (alokacja)  | Wolny (max ±5%/dzień) | Ile $ per bot       | min $5K, max 35% |
+| **Ryzyko** (mnożniki)   | Szybki (max ±10%/dzień) | Size, spread, max_pos | bounds enforced |
 
 ### Risk Multipliers per Score Zone
 
-| Zone | Score | Size | Spread | MaxPos |
-|------|-------|------|--------|--------|
-| Reward | >0.7 | 1.10x | 0.90x | 1.10x |
-| Hold | 0.30-0.7 | 1.0x | 1.0x | 1.0x |
-| Punish | 0.10-0.30 | 0.70x | 1.30x | 0.70x |
-| Pause | <0.10 | 0.40x | 1.50x | 0.40x |
+| Zone   | Score     | Size  | Spread | MaxPos |
+|--------|-----------|-------|--------|--------|
+| Reward | >0.7      | 1.10x |  0.90x |  1.10x |
+| Hold   | 0.30-0.7  | 1.0x  |  1.0x  |  1.0x  |
+| Punish | 0.10-0.30 | 0.70x |  1.30x |  0.70x |
+| Pause  | <0.10     | 0.40x |  1.50x |  0.40x |
 
 ### Scoring (absolute, not rank-based)
 ```
@@ -251,7 +271,31 @@ score = 0.40 * sharpe_norm + 0.30 * return_norm + 0.20 * (1-dd_norm) + 0.10 * co
 ### Compound + Supervisor Integration
 - **BTC/ETH:** compound ON — reinvest PnL, supervisor controls BASE allocation only
 - **SOL/XRP:** compound OFF — supervisor controls full capital + risk
-- Result: $50K → $100K in 225d (+21.6% vs equal allocation)
+- Result: $50K → $112.7K in 365d (+21.4% vs equal allocation)
+
+### HYPE Staking Analysis
+At $50K bot capital with 125% annual return:
+
+| Rabat |   HYPE |    Koszt | Oszcz./rok | Te $ w bocie | Opłaca się?        |
+|-------|--------|----------|------------|--------------|---------------------|
+| 5%    |     10 |     $300 |     $1,136 |         $376 | ✅ TAK (+$760/rok) |
+| 10%   |    100 |   $3,000 |     $2,271 |       $3,759 | ❌ NIE (-$1,488)   |
+| 15%   |  1,000 |  $30,000 |     $3,407 |      $37,590 | ❌ NIE             |
+
+**Rekomendacja:** Stakuj 10 HYPE ($300) = 5% rabat. Resztę do bota.
+100 HYPE stake opłaca się dopiero przy kapitale bota > ~$83K.
+
+## Pending Fixes (TODO)
+
+### maker_fee default still wrong in these files:
+- `bot_mm/config.py` line 75: `maker_fee: float = -0.00015`
+- `backtest/mm_backtester.py` line 143 and 812: `maker_fee: float = -0.00015`
+- `backtest/ob_backtester.py` line 100: `maker_fee: float = -0.00015`
+- `scripts/monthly_breakdown.py` line 34: `maker_fee=-0.00015`
+- `scripts/run_ob_backtest.py` line 33: `default=-0.00015`
+- `bot_mm/core/order_manager.py` line 207: `maker_fee: float = -0.00015`
+
+Only `scripts/backtest_supervisor.py` has been updated to `+0.00015`.
 
 ## Live Infrastructure
 
@@ -277,12 +321,13 @@ scp -i deploy/botmm-key.pem -r ec2-user@63.178.163.203:~/BotMM/data/orderbook/ .
 ```
 
 ### Data Requirements for Tick-Level Backtest
-| Cel | Minimum | Data |
-|-----|---------|------|
-| Smoke test | 1 day | ~12h L2 + trades |
-| Sensowny backtest (Sharpe) | 2-3 days | ≥2 daily PnL points |
-| Wiarygodne wyniki | 7+ days | statystyczna istotność |
-| Produkcyjny benchmark | 14-30 days | pełny obraz rynku |
+
+| Cel                    | Minimum  | Data                    |
+|------------------------|----------|-------------------------|
+| Smoke test             | 1 day    | ~12h L2 + trades        |
+| Sensowny backtest      | 2-3 days | ≥2 daily PnL points     |
+| Wiarygodne wyniki      | 7+ days  | statystyczna istotność  |
+| Produkcyjny benchmark  | 14-30 d  | pełny obraz rynku       |
 
 ## Production Cron Schedule
 
@@ -347,6 +392,18 @@ joblib>=1.3.0
 - **Problem:** `crontab: command not found` on Amazon Linux 2023
 - **Fix:** Added `cronie` to dnf install in setup script
 
+### 2026-02-11: HL maker fee was wrong (rebate → cost)
+- **Problem:** Entire codebase had `maker_fee = -0.00015` (assumed rebate). HL base tier is +0.015% COST.
+- **Fix:** Changed to `maker_fee = +0.00015` in backtest_supervisor.py. Other files still pending.
+- **Impact:** ~$16K difference on 225d. Bot still profitable: gross spread > fee cost.
+- **Source:** https://hyperliquid.gitbook.io/hyperliquid-docs/trading/fees
+- **Files still with old value:** config.py, mm_backtester.py, ob_backtester.py, order_manager.py, monthly_breakdown.py, run_ob_backtest.py
+
+### 2026-02-11: Supervisor V0 too aggressive
+- **Problem:** V0 supervisor (14d window, 30%/10% cuts, min $500) over-punished assets during temporary dips. ETH dropped to $575 base allocation then recovered. Lost $4.5K vs gentler configs.
+- **Fix:** V3_CONSERVATIVE tuning: 45d window, 10%/3% cuts, min $5K, 1% daily mean-revert to equal.
+- **Impact:** +$4,500 (+9% PnL) vs V0 on 365d. +21.4% vs EQUAL baseline.
+
 ## Commit History
 
 1. `e867e6f` — Initial BotMM: Avellaneda-Stoikov market maker with backtester
@@ -370,3 +427,4 @@ joblib>=1.3.0
 19. `3e4d41f` — refactor: remove HYPE from active assets (poor performance)
 20. `c8b3b50` — feat: monthly breakdown scripts + backtest results snapshot (225d)
 21. `46f9875` — fix: HL maker fee +0.015% cost (not rebate), supervisor V3 tuning (+9% PnL)
+22. `7fd015a` — docs: HOW_IT_EARNS profit flow, backtest results v2, staking analysis
