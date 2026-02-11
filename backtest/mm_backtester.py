@@ -156,6 +156,7 @@ class MMBacktester:
         auto_tune_eval_hours: float = 4.0,
         auto_tune_window_hours: float = 24.0,
         use_dynamic_size: bool = False,
+        compound: bool = False,
     ):
         self.quote_params = quote_params or QuoteParams()
         self.maker_fee = maker_fee
@@ -163,6 +164,7 @@ class MMBacktester:
         self.max_position_usd = max_position_usd
         self.max_daily_loss = max_daily_loss
         self.capital = capital
+        self.compound = compound
         self.atr_period = atr_period
         self.use_bias = use_bias
         self.bias_strength = bias_strength
@@ -263,6 +265,7 @@ class MMBacktester:
         spreads_captured = []
         spreads_quoted = []
         inventory_samples = []
+        current_max_pos = self.max_position_usd
 
         for i in range(self.atr_period, len(candles)):
             candle = candles[i]
@@ -294,6 +297,14 @@ class MMBacktester:
                 current_day = day
                 day_pnl = 0.0
 
+                # Compounding: scale size and max-pos proportional to equity
+                if self.compound and equity > 0:
+                    scale = equity / self.capital
+                    quoter.params.order_size_usd = self.quote_params.order_size_usd * scale
+                    current_max_pos = self.max_position_usd * scale
+                    inventory.max_position_usd = current_max_pos
+                    risk.max_daily_loss = self.capital * 0.05 * scale
+
             # Risk check
             inventory.update_unrealized(mid_price)
             pos_usd = inventory.state.position_size * mid_price
@@ -302,7 +313,7 @@ class MMBacktester:
                 equity=equity,
                 current_vol=volatility_pct,
                 position_usd=pos_usd,
-                max_position_usd=self.max_position_usd,
+                max_position_usd=current_max_pos,
             )
 
             if status == RiskStatus.HALT:
@@ -311,7 +322,7 @@ class MMBacktester:
 
             # Auto-tuner: update metrics and evaluate
             if tuner is not None:
-                inv_pct = abs(pos_usd) / self.max_position_usd if self.max_position_usd > 0 else 0
+                inv_pct = abs(pos_usd) / current_max_pos if current_max_pos > 0 else 0
                 tuner.on_bar(equity, inv_pct)
                 changes = tuner.evaluate()
                 if changes:
@@ -348,7 +359,7 @@ class MMBacktester:
                 vol_ratio_current = atr  # current ATR
                 vol_ratio_avg = avg_atr if avg_atr > 0 else atr  # baseline ATR
 
-                inv_pct_for_sizer = pos_usd / self.max_position_usd if self.max_position_usd > 0 else 0
+                inv_pct_for_sizer = pos_usd / current_max_pos if current_max_pos > 0 else 0
 
                 computed_size = dynamic_sizer.compute_size(
                     current_vol=vol_ratio_current,
@@ -369,7 +380,7 @@ class MMBacktester:
                 mid_price=mid_price,
                 volatility_pct=volatility_pct,
                 inventory_usd=pos_usd,
-                max_position_usd=self.max_position_usd,
+                max_position_usd=current_max_pos,
                 directional_bias=current_bias,
             )
 
@@ -405,7 +416,7 @@ class MMBacktester:
                         quote_price=quote.price,
                         quote_side=quote.side,
                         volatility_pct=volatility_pct,
-                        inventory_ratio=abs(pos_usd) / self.max_position_usd,
+                        inventory_ratio=abs(pos_usd) / current_max_pos,
                         vol_regime=1.0,
                         candle_idx=i,
                     )
@@ -810,6 +821,7 @@ def main():
     parser.add_argument("--toxicity", action="store_true", help="Enable toxicity-based spread adjustment")
     parser.add_argument("--auto-tune", action="store_true", help="Enable runtime auto-parameter tuning")
     parser.add_argument("--dynamic-size", action="store_true", help="Enable dynamic order size scaling")
+    parser.add_argument("--compound", action="store_true", help="Reinvest daily PnL (compound growth)")
     parser.add_argument("--tune-eval-hours", type=float, default=4.0, help="Auto-tuner evaluation interval (hours)")
     parser.add_argument("--tune-window-hours", type=float, default=24.0, help="Auto-tuner rolling window (hours)")
     args = parser.parse_args()
@@ -865,6 +877,7 @@ def main():
         auto_tune_eval_hours=args.tune_eval_hours,
         auto_tune_window_hours=args.tune_window_hours,
         use_dynamic_size=args.dynamic_size,
+        compound=args.compound,
     )
 
     result = bt.run(candles, args.symbol)
