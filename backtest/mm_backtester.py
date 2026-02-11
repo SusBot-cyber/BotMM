@@ -853,6 +853,7 @@ def main():
         maker_fee=args.maker_fee,
         taker_fee=args.taker_fee,
         max_position_usd=args.max_pos,
+        max_daily_loss=args.capital * 0.05,  # 5% of capital
         capital=args.capital,
         use_bias=args.bias,
         bias_strength=args.bias_strength,
