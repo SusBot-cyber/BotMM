@@ -361,3 +361,5 @@ joblib>=1.3.0
 16. `f77afab` — fix: dynamic HL rounding + metadata monitor + docs overhaul
 17. `b4897f6` — docs: add architecture.md and modules.md reference
 18. `1a78260` — docs: add file naming convention rule (UPPER CASE for doc files)
+19. `3e4d41f` — refactor: remove HYPE from active assets (poor performance)
+20. `c8b3b50` — feat: monthly breakdown scripts + backtest results snapshot (225d)
