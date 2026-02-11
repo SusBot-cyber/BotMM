@@ -11,9 +11,11 @@ Loop (every ~1s):
 """
 
 import asyncio
+import json
 import logging
 import time
 from collections import deque
+from pathlib import Path
 from typing import Optional
 
 from bot_mm.config import AssetMMConfig
@@ -86,6 +88,12 @@ class BasicMMStrategy:
             from bot_mm.ml.toxicity import ToxicityDetector
             self._toxicity = ToxicityDetector()
 
+        # Hot reload: check live_params.json periodically
+        self._live_params_file = Path(__file__).parent.parent.parent / "data" / "live_params.json"
+        self._last_params_mtime: float = 0.0
+        self._params_check_interval: int = 3600  # check every hour (in iterations)
+        self._last_params_check: int = 0
+
         if config.bias.enabled:
             from bot_mm.core.signals import DirectionalBias
             self._bias = DirectionalBias(
@@ -140,6 +148,11 @@ class BasicMMStrategy:
     async def run_iteration(self):
         """Execute one quote cycle."""
         self._iteration += 1
+
+        # Hot reload params from daily reoptimizer
+        if self._iteration - self._last_params_check >= self._params_check_interval:
+            self._check_param_reload()
+            self._last_params_check = self._iteration
 
         # 1. Get mid price
         mid_price = await self.exchange.get_mid_price(self.symbol)
@@ -256,6 +269,54 @@ class BasicMMStrategy:
             self._log_status(mid_price)
 
         self._last_mid = mid_price
+
+    def _check_param_reload(self):
+        """Check if live_params.json has been updated and apply new params."""
+        try:
+            if not self._live_params_file.exists():
+                return
+
+            mtime = self._live_params_file.stat().st_mtime
+            if mtime <= self._last_params_mtime:
+                return
+
+            with open(self._live_params_file) as f:
+                all_params = json.load(f)
+
+            if self.symbol not in all_params:
+                self._last_params_mtime = mtime
+                return
+
+            new = all_params[self.symbol]
+            old_spread = self.config.quote.base_spread_bps
+            old_skew = self.config.quote.inventory_skew_factor
+            old_size = self.config.quote.order_size_usd
+
+            if "base_spread_bps" in new:
+                self.config.quote.base_spread_bps = new["base_spread_bps"]
+                self.quoter.params.base_spread_bps = new["base_spread_bps"]
+            if "inventory_skew_factor" in new:
+                self.config.quote.inventory_skew_factor = new["inventory_skew_factor"]
+                self.quoter.params.inventory_skew_factor = new["inventory_skew_factor"]
+            if "order_size_usd" in new:
+                self.config.quote.order_size_usd = new["order_size_usd"]
+                self.quoter.params.order_size_usd = new["order_size_usd"]
+            if "num_levels" in new:
+                self.config.quote.num_levels = new["num_levels"]
+                self.quoter.params.num_levels = new["num_levels"]
+            if "vol_multiplier" in new:
+                self.config.quote.vol_multiplier = new["vol_multiplier"]
+                self.quoter.params.vol_multiplier = new["vol_multiplier"]
+
+            self._last_params_mtime = mtime
+            logger.info(
+                "HOT RELOAD %s | spread=%.1f->%.1f | skew=%.2f->%.2f | size=$%.0f->$%.0f",
+                self.symbol, old_spread, self.config.quote.base_spread_bps,
+                old_skew, self.config.quote.inventory_skew_factor,
+                old_size, self.config.quote.order_size_usd,
+            )
+        except Exception:
+            logger.warning("Failed to reload params for %s", self.symbol, exc_info=True)
 
     def _update_volatility(self, mid_price: float):
         """

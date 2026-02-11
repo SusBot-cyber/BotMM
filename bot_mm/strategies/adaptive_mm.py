@@ -271,6 +271,11 @@ class AdaptiveMMStrategy(BasicMMStrategy):
         """Execute one adaptive quote cycle."""
         self._iteration += 1
 
+        # Hot reload params from daily reoptimizer
+        if self._iteration - self._last_params_check >= self._params_check_interval:
+            self._check_param_reload()
+            self._last_params_check = self._iteration
+
         # 1. Get mid price
         mid_price = await self.exchange.get_mid_price(self.symbol)
         if mid_price <= 0:
