@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+data/cache/*.csv
+backtest/results/*.json
+backtest/results/*.csv
+backtest/results/*.html
+*.log
+.idea/
+.vscode/
