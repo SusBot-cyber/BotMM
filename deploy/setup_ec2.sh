@@ -15,9 +15,11 @@ echo "=== BotMM L2 Recorder — EC2 Setup ==="
 echo "[1/10] Updating system packages..."
 dnf update -y -q
 
-# 2. Install Python 3.11+, pip, git
-echo "[2/10] Installing Python, pip, git..."
-dnf install -y -q python3.11 python3.11-pip python3.11-devel git
+# 2. Install Python 3.11+, pip, git, cron
+echo "[2/10] Installing Python, pip, git, cron..."
+dnf install -y -q python3.11 python3.11-pip python3.11-devel git cronie
+systemctl enable crond
+systemctl start crond
 
 # 3. Verify repo is present
 echo "[3/10] Checking BotMM repository..."

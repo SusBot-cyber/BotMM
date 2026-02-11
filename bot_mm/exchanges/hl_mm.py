@@ -1,5 +1,13 @@
+"""
+Hyperliquid exchange adapter for market making.
+
+Handles: REST API orders (ALO, batch modify), L2 snapshots, position queries,
+dead man's switch, and dynamic asset metadata (szDecimals) from HL universe.
+Price/size rounding enforced per-asset from metadata (5 sig figs, maxDecimals - szDecimals).
+"""
 import asyncio
 import logging
+import math
 import time
 from typing import List, Dict, Optional
 
@@ -15,45 +23,73 @@ SYMBOL_MAP = {
     "BTCUSDT": "BTC",
     "ETHUSDT": "ETH",
     "SOLUSDT": "SOL",
+    "XRPUSDT": "XRP",
     "HYPEUSDT": "HYPE",
 }
 
-PRICE_DECIMALS = {
-    "BTC": 0,
-    "ETH": 1,
-    "SOL": 3,
-    "HYPE": 3,
-}
-
-SIZE_DECIMALS = {
-    "BTC": 5,
-    "ETH": 4,
-    "SOL": 2,
-    "HYPE": 2,
-}
-
-# Significant figures for HL price rounding
+# Max significant figures for HL prices (perps)
 PRICE_SIG_FIGS = 5
+# Max decimal places for perp prices before szDecimals adjustment
+PERP_MAX_DECIMALS = 6
+
+# Populated dynamically from meta() on connect — keyed by HL asset name
+_sz_decimals: Dict[str, int] = {}
+# All known HL asset names from universe (populated on connect)
+_known_assets: set = set()
+
+
+def _round_sig_figs(value: float, sig_figs: int = PRICE_SIG_FIGS) -> float:
+    """Round a number to N significant figures (HL requires ≤5 for prices)."""
+    if value == 0:
+        return 0.0
+    magnitude = math.floor(math.log10(abs(value)))
+    decimals = sig_figs - 1 - magnitude
+    return round(value, max(decimals, 0))
+
+
+def _get_sz_decimals(asset: str) -> int:
+    """Get szDecimals for asset from cached metadata."""
+    return _sz_decimals.get(asset, 2)
+
+
+def _get_price_decimals(asset: str) -> int:
+    """Allowed price decimals = PERP_MAX_DECIMALS(6) - szDecimals."""
+    return PERP_MAX_DECIMALS - _get_sz_decimals(asset)
 
 
 def _round_price(price: float, asset: str) -> float:
-    """Round price to asset-specific decimals."""
-    decimals = PRICE_DECIMALS.get(asset, 2)
-    return round(price, decimals)
+    """Round price: first to allowed decimals, then to 5 significant figures."""
+    max_dec = _get_price_decimals(asset)
+    rounded = round(price, max_dec)
+    return _round_sig_figs(rounded, PRICE_SIG_FIGS)
 
 
 def _round_size(size: float, asset: str) -> float:
-    """Round size to asset-specific decimals."""
-    decimals = SIZE_DECIMALS.get(asset, 2)
+    """Round size to asset's szDecimals from metadata."""
+    decimals = _get_sz_decimals(asset)
     return round(size, decimals)
 
 
 def _to_hl_symbol(symbol: str) -> str:
-    """Convert BTCUSDT → BTC for Hyperliquid."""
+    """Convert BTCUSDT → BTC for Hyperliquid. Auto-detects suffix."""
     hl = SYMBOL_MAP.get(symbol)
-    if hl is None:
-        raise ValueError(f"Unknown symbol: {symbol}. Supported: {list(SYMBOL_MAP.keys())}")
-    return hl
+    if hl is not None:
+        return hl
+    # Auto-strip common suffixes and validate against known HL assets
+    for suffix in ("USDT", "USD", "USDC", "PERP"):
+        if symbol.upper().endswith(suffix):
+            candidate = symbol.upper()[:-len(suffix)]
+            if candidate in _known_assets:
+                SYMBOL_MAP[symbol] = candidate
+                return candidate
+    # Try raw symbol name (e.g. "BTC" passed directly)
+    if symbol.upper() in _known_assets:
+        SYMBOL_MAP[symbol] = symbol.upper()
+        return symbol.upper()
+    raise ValueError(
+        f"Unknown symbol: {symbol}. Not found in HL universe ({len(_known_assets)} assets). "
+        f"Check symbol name or ensure connect() was called."
+    )
 
 
 class HyperliquidMMExchange(BaseMMExchange):
@@ -84,12 +120,22 @@ class HyperliquidMMExchange(BaseMMExchange):
                 account, base_url=base_url, account_address=address
             )
 
-            # Cache metadata for asset index lookups
+            # Cache metadata for asset index lookups + szDecimals
             self._meta = await asyncio.to_thread(self._info.meta)
+
+            # Populate szDecimals + known assets from metadata
+            global _sz_decimals, _known_assets
+            for asset_info in self._meta.get("universe", []):
+                name = asset_info["name"]
+                sz_dec = asset_info.get("szDecimals", 2)
+                _sz_decimals[name] = sz_dec
+                _known_assets.add(name)
+
             logger.info(
-                "Connected to Hyperliquid %s | wallet=%s",
+                "Connected to Hyperliquid %s | wallet=%s | assets=%d | szDecimals loaded",
                 "testnet" if self._testnet else "mainnet",
                 address[:10] + "...",
+                len(_sz_decimals),
             )
         except Exception:
             logger.exception("Failed to connect to Hyperliquid")
@@ -98,6 +144,57 @@ class HyperliquidMMExchange(BaseMMExchange):
     async def disconnect(self):
         """No persistent connection to close for REST SDK."""
         logger.info("Hyperliquid MM adapter disconnected")
+
+    async def refresh_metadata(self) -> dict:
+        """Re-fetch metadata from HL and update szDecimals cache.
+
+        Returns dict of changes detected (new assets, changed szDecimals).
+        Should be called periodically (e.g. every hour).
+        """
+        global _sz_decimals
+        try:
+            new_meta = await asyncio.to_thread(self._info.meta)
+            old_sz = dict(_sz_decimals)
+            old_count = len(old_sz)
+
+            new_sz: Dict[str, int] = {}
+            for asset_info in new_meta.get("universe", []):
+                name = asset_info["name"]
+                sz_dec = asset_info.get("szDecimals", 2)
+                new_sz[name] = sz_dec
+
+            # Detect changes
+            changes: Dict[str, str] = {}
+            for name, dec in new_sz.items():
+                if name not in old_sz:
+                    changes[name] = f"NEW asset (szDecimals={dec})"
+                elif old_sz[name] != dec:
+                    changes[name] = f"szDecimals {old_sz[name]} -> {dec}"
+
+            removed = set(old_sz.keys()) - set(new_sz.keys())
+            for name in removed:
+                changes[name] = "REMOVED from universe"
+
+            # Apply update
+            _sz_decimals.clear()
+            _sz_decimals.update(new_sz)
+            self._meta = new_meta
+
+            if changes:
+                logger.warning(
+                    "METADATA CHANGED | assets: %d -> %d | changes: %s",
+                    old_count, len(new_sz), changes,
+                )
+            else:
+                logger.debug(
+                    "Metadata refreshed | assets=%d | no changes",
+                    len(new_sz),
+                )
+
+            return changes
+        except Exception:
+            logger.exception("Failed to refresh metadata")
+            return {}
 
     def _get_asset_index(self, asset: str) -> int:
         """Get numeric asset index from metadata."""

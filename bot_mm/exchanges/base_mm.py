@@ -1,3 +1,9 @@
+"""
+Abstract exchange interface for market making adapters.
+
+Defines the contract that all exchange implementations (Hyperliquid, Binance, Bybit)
+must follow: market data, order management, position queries, and safety features.
+"""
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, field

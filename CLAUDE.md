@@ -7,7 +7,121 @@ Market making bot for crypto perpetuals on Hyperliquid (primary), with future su
 **Strategy:** Capture bid-ask spread by quoting both sides of the order book.
 **Edge:** HL maker rebate (-0.015%), wider spreads than CEX, directional bias from Kalman+QQE.
 **Repository:** https://github.com/SusBot-cyber/BotMM
-**Status:** ✅ Phase 1-4 DONE, Phase 5 (Supervisor + Compound) DONE — Ready for live testing
+**Status:** ✅ Phase 1-5 DONE — L2 Recorder deployed on AWS, ready for live MM testing
+
+---
+
+## Documentation Rules
+
+**These rules MUST be followed in every session.** Update docs as you work, not after.
+
+### When to Update CLAUDE.md (this file)
+- **Every session:** Add/update Live Infrastructure, commit history, bug fixes, new features
+- **Config changes:** Update Key Parameters, Dependencies
+- **Architecture changes:** Update Architecture tree, Phase Status
+- **New modules:** Add to Architecture tree with one-line description
+- **Performance changes:** Update backtest results tables
+
+### When to Update docs/
+- **New module added:** Add entry to `docs/modules.md` (purpose, key classes, public API)
+- **Architecture change:** Update `docs/architecture.md` (data flow, component relationships)
+- **New deployment:** Update `deploy/README.md` (step-by-step, troubleshooting)
+
+### When to Update README.md
+- **Major feature milestone** (new phase complete, performance improvement)
+- **New quick-start command** or usage pattern
+- **Dependency changes**
+
+### Module Docstring Standard
+Every Python file MUST have a module-level docstring:
+```python
+"""
+Module Name — one-line purpose.
+
+Detailed description: what it does, key algorithms, data flow.
+"""
+```
+Every class MUST have a one-line docstring. Every public method with >3 lines MUST have a docstring.
+
+### Commit Messages
+Format: `type: short description` where type = feat|fix|refactor|docs|test
+Include what changed AND why in body for non-trivial commits.
+
+---
+
+## Architecture
+
+```
+bot_mm/
+├── main.py                     # Main orchestrator (async event loop, DMS, metadata monitor)
+├── config.py                   # Per-asset configuration + env loading
+├── core/
+│   ├── quoter.py               # Quote engine (Avellaneda-Stoikov)
+│   ├── inventory.py            # Inventory tracking & skew
+│   ├── risk.py                 # Risk limits, circuit breakers
+│   ├── order_manager.py        # Order lifecycle, partial fills, dedup
+│   ├── signals.py              # Directional bias (Kalman+QQE)
+│   └── book_imbalance.py       # L2 order book imbalance tracker
+├── exchanges/
+│   ├── base_mm.py              # Abstract exchange interface
+│   └── hl_mm.py                # Hyperliquid (REST, ALO, batch, dynamic rounding)
+├── strategies/
+│   ├── basic_mm.py             # Spread capture + bias + toxicity + hot reload
+│   └── adaptive_mm.py          # Vol regime, fill rate, inventory decay
+├── ml/
+│   ├── fill_predictor.py       # GBM fill + adverse selection predictor
+│   ├── data_generator.py       # Training data from candles
+│   ├── toxicity.py             # Real-time adverse selection detector
+│   ├── dynamic_sizer.py        # Adaptive order sizing (vol, fill rate, drawdown)
+│   └── auto_tuner.py           # Runtime parameter self-adjustment
+├── data/
+│   └── l2_recorder.py          # HL WebSocket L2 order book recorder
+└── utils/
+    ├── logger.py               # Structured logging with colors
+    ├── metrics.py              # PnL tracking, fill rates, daily buckets
+    └── notifier.py             # Discord webhook notifications
+
+backtest/
+├── mm_backtester.py            # Candle-based MM simulation (~60% realism)
+├── ob_backtester.py            # Tick-level order book replay (~90% realism)
+└── ob_loader.py                # L2/trade data loader for replay
+
+scripts/
+├── run_mm_optimizer.py         # Grid search optimizer (quick/normal/full modes)
+├── train_fill_model.py         # ML model training pipeline
+├── record_orderbook.py         # L2 WebSocket data recorder CLI
+├── run_ob_backtest.py          # Order book replay backtest CLI
+├── daily_reoptimize.py         # Nightly auto-reoptimizer (144 combos/asset)
+└── backtest_supervisor.py      # Meta-supervisor simulation + scoring
+
+deploy/
+├── README.md                   # AWS deployment step-by-step guide
+├── setup_ec2.sh                # One-time EC2 setup (Python, venv, systemd, cron)
+├── botmm-recorder.service      # Systemd unit file
+├── monitor.sh                  # Health check (cron, Discord alerts)
+├── sync_to_s3.sh               # S3 backup script
+└── .env.example                # Configuration template
+
+tests/                          # 343 tests across 16 test files
+```
+
+## Phase Status
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| **Phase 1** | Core MM engine (quoter, inventory, risk, backtester) | ✅ DONE |
+| **Phase 2** | Adaptive MM, directional bias, book imbalance, multi-asset | ✅ DONE |
+| **Phase 3** | Cross-exchange arb (multi-venue quoting) | ⏭️ SKIPPED (testnet unusable) |
+| **Phase 4.1** | Historical order book data collection | ✅ DONE (L2 WebSocket recorder) |
+| **Phase 4.2** | MM backtester (order book replay) | ✅ DONE (tick-level, queue position) |
+| **Phase 4.3** | ML-based spread prediction | ✅ DONE (GBM, AUC 0.77) |
+| **Phase 4.4** | Toxicity detection (adverse selection) | ✅ DONE (per-side EMA tracking) |
+| **Phase 4.5** | Auto-parameter tuning | ✅ DONE (runtime self-adjustment) |
+| **Phase 5.1** | Partial fills | ✅ DONE (depth-based, 30% threshold) |
+| **Phase 5.2** | DynamicSizer (adaptive order sizing) | ✅ DONE (76 tests) |
+| **Phase 5.3** | Compound mode (PnL reinvestment) | ✅ DONE (BTC/ETH only) |
+| **Phase 5.4** | Daily auto-reoptimizer + hot reload | ✅ DONE (144 combos, drift safety) |
+| **Phase 5.5** | Meta-supervisor (capital + risk allocation) | ✅ DONE (dual control, +21.6%) |
 
 ## Current Performance
 
@@ -29,8 +143,6 @@ Market making bot for crypto perpetuals on Hyperliquid (primary), with future su
 | Equal + compound BTC/ETH | $41,084 | 82.2% | 23.3 |
 | **Supervisor + compound** | **$49,979** | **100.0%** | 22.4 |
 
-**Best portfolio config:** Supervisor (21d window) + compound BTC/ETH + fixed SOL/XRP/HYPE → **+21.6%** vs equal
-
 ### Optimizer Results ($1K base)
 
 | Asset | Spread | Skew | Bias | Size | PnL | Compound |
@@ -40,85 +152,6 @@ Market making bot for crypto perpetuals on Hyperliquid (primary), with future su
 | SOL | 1.5 | 0.5 | OFF | 150 | $1,197 | OFF |
 | XRP | 1.5 | 0.5 | 0.2 | 150 | $1,228 | OFF |
 | HYPE | 1.5 | 0.3 | OFF | 100 | $552 | OFF |
-
-## Architecture
-
-```
-bot_mm/
-├── main.py                     # Main orchestrator (async event loop)
-├── config.py                   # Per-asset configuration + env loading
-├── core/
-│   ├── quoter.py               # Quote engine (Avellaneda-Stoikov)
-│   ├── inventory.py            # Inventory tracking & skew
-│   ├── risk.py                 # Risk limits, circuit breakers
-│   ├── order_manager.py        # Order lifecycle
-│   ├── signals.py              # Directional bias (Kalman+QQE)
-│   └── book_imbalance.py       # L2 order book imbalance tracker
-├── exchanges/
-│   ├── base_mm.py              # Abstract exchange interface
-│   └── hl_mm.py                # Hyperliquid (REST, ALO, batch modify)
-├── strategies/
-│   ├── basic_mm.py             # Simple spread capture + bias + toxicity + hot reload
-│   └── adaptive_mm.py          # Vol regime, fill rate tracking, inventory decay
-├── ml/
-│   ├── fill_predictor.py       # GBM fill + adverse selection predictor
-│   ├── data_generator.py       # Training data from candles
-│   ├── toxicity.py             # Real-time adverse selection detector
-│   └── auto_tuner.py           # Runtime parameter self-adjustment
-├── data/
-│   └── l2_recorder.py          # HL WebSocket L2 order book recorder
-└── utils/
-    ├── logger.py               # Structured logging
-    └── metrics.py              # PnL tracking, fill rates
-
-backtest/
-├── mm_backtester.py            # Candle-based MM simulation (~60% realism)
-├── ob_backtester.py            # Tick-level order book replay (~90% realism)
-└── ob_loader.py                # L2/trade data loader for replay
-
-scripts/
-├── run_mm_optimizer.py         # Grid search optimizer (quick/normal/full modes)
-├── train_fill_model.py         # ML model training pipeline
-├── record_orderbook.py         # L2 WebSocket data recorder (HL)
-├── run_ob_backtest.py          # Order book replay backtest CLI
-├── daily_reoptimize.py         # Nightly auto-reoptimizer (144 combos/asset)
-└── backtest_supervisor.py      # Meta-supervisor simulation + scoring
-
-tests/                          # 343 tests total
-├── test_quoter.py              # 14 tests
-├── test_inventory.py           # 20 tests
-├── test_risk.py                # 16 tests
-├── test_signals.py             # 16 tests
-├── test_adaptive.py            # 24 tests
-├── test_book_imbalance.py      # 10 tests
-├── test_fill_predictor.py      # 16 tests
-├── test_toxicity.py            # 14 tests
-├── test_auto_tuner.py          # 31 tests
-├── test_l2_recorder.py         # 20 tests
-├── test_ob_backtester.py       # 23 tests
-├── test_ob_loader.py           # 16 tests
-├── test_partial_fills.py       # 1 test
-├── test_dynamic_sizer.py       # 76 tests
-└── test_supervisor.py          # 66 tests
-```
-
-## Phase Status
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| **Phase 1** | Core MM engine (quoter, inventory, risk, backtester) | ✅ DONE |
-| **Phase 2** | Adaptive MM, directional bias, book imbalance, multi-asset | ✅ DONE |
-| **Phase 3** | Cross-exchange arb (multi-venue quoting) | ⏭️ SKIPPED (testnet unusable) |
-| **Phase 4.1** | Historical order book data collection | ✅ DONE (L2 WebSocket recorder) |
-| **Phase 4.2** | MM backtester (order book replay) | ✅ DONE (tick-level, queue position) |
-| **Phase 4.3** | ML-based spread prediction | ✅ DONE (GBM, AUC 0.77) |
-| **Phase 4.4** | Toxicity detection (adverse selection) | ✅ DONE (per-side EMA tracking) |
-| **Phase 4.5** | Auto-parameter tuning | ✅ DONE (runtime self-adjustment) |
-| **Phase 5.1** | Partial fills | ✅ DONE (depth-based, 30% threshold) |
-| **Phase 5.2** | DynamicSizer (adaptive order sizing) | ✅ DONE (76 tests) |
-| **Phase 5.3** | Compound mode (PnL reinvestment) | ✅ DONE (BTC/ETH only) |
-| **Phase 5.4** | Daily auto-reoptimizer + hot reload | ✅ DONE (144 combos, drift safety) |
-| **Phase 5.5** | Meta-supervisor (capital + risk allocation) | ✅ DONE (dual control, +21.6%) |
 
 ## Key Parameters
 
@@ -135,6 +168,28 @@ bias_strength=0.2          # Directional bias from Kalman+QQE
 max_daily_loss=capital*0.05 # Auto-scaled 5% of capital
 ```
 
+## Exchange Integration
+
+### Asset Rounding (dynamic from HL metadata)
+Bot fetches `szDecimals` from HL `meta()` on connect + hourly refresh. No hardcoded decimals.
+Formula: `price_decimals = 6 - szDecimals`, prices capped at 5 significant figures.
+
+| Asset | szDecimals | Price Decimals | Size Decimals |
+|-------|-----------|----------------|---------------|
+| BTC | 5 | 1 | 5 |
+| ETH | 4 | 2 | 4 |
+| SOL | 2 | 4 | 2 |
+| XRP | 0 | 6 | 0 (integers) |
+| HYPE | 2 | 4 | 2 |
+
+Symbol resolution is automatic: `XYZUSDT` → strips suffix → validates against HL universe.
+New assets can be added to `.env` without code changes.
+
+### Fee Convention (Critical)
+- HL maker fee = -0.00015 (NEGATIVE = rebate, we GET money)
+- `total_fees` accumulates raw values (negative for rebates)
+- `net_pnl = realized_pnl - total_fees` (subtracting negative = adding rebate)
+
 ## ML Modules
 
 ### Fill Predictor (`ml/fill_predictor.py`)
@@ -149,22 +204,19 @@ max_daily_loss=capital*0.05 # Auto-scaled 5% of capital
 - EMA smoothing per side (buy/sell separately)
 - Spread multiplier: >0.6 toxicity → 1.5x, >0.4 → 1.25x, <0.2 → 0.9x
 
+### Dynamic Sizer (`ml/dynamic_sizer.py`)
+- Adjusts order_size_usd based on vol regime, fill rate, inventory, toxicity, drawdown
+- 76 tests covering all edge cases
+
 ### Auto-Parameter Tuner (`ml/auto_tuner.py`)
 - Runtime self-adjustment based on rolling performance windows
 - Rules: Sharpe<0 → widen spread, fill_rate<15% → tighten, inventory>70% → increase skew
 - Boundaries enforced, drift reset at 70%
 - Impact: +9% Sharpe, 93% profitable days
 
-### L2 Order Book Recorder (`data/l2_recorder.py`)
-- Hyperliquid WebSocket (`wss://api.hyperliquid.xyz/ws`)
-- Subscribes to L2 book + trade feed per symbol
-- Hourly CSV rotation: `data/orderbook/{SYMBOL}/{date}/l2_{HH}.csv`
-- Auto-reconnect with exponential backoff
-
 ## Meta-Supervisor System
 
 ### Dual Control: Capital + Risk
-Supervisor zarządza dwoma wymiarami jednocześnie:
 
 | Mechanizm | Szybkość | Wpływ | Limity |
 |-----------|----------|-------|--------|
@@ -173,58 +225,54 @@ Supervisor zarządza dwoma wymiarami jednocześnie:
 
 ### Risk Multipliers per Score Zone
 
-| Zone | Score | Size | Spread | MaxPos | PnL Effect |
-|------|-------|------|--------|--------|------------|
-| Reward | >0.7 | 1.10x | 0.90x | 1.10x | +21% |
-| Hold | 0.4-0.7 | 1.0x | 1.0x | 1.0x | neutral |
-| Punish | 0.2-0.4 | 0.70x | 1.30x | 0.70x | -51% |
-| Pause | <0.2 | 0.40x | 1.50x | 0.40x | -80% |
-
-### Compound + Supervisor Integration
-- **BTC/ETH:** compound ON — reinvest PnL, supervisor controls BASE allocation only
-- **SOL/XRP/HYPE:** compound OFF — supervisor controls full capital + risk
-- No conflict: compound grows equity on top of supervisor base
-- Result: $50K → $100K in 225d (+21.6% vs equal allocation)
+| Zone | Score | Size | Spread | MaxPos |
+|------|-------|------|--------|--------|
+| Reward | >0.7 | 1.10x | 0.90x | 1.10x |
+| Hold | 0.4-0.7 | 1.0x | 1.0x | 1.0x |
+| Punish | 0.2-0.4 | 0.70x | 1.30x | 0.70x |
+| Pause | <0.2 | 0.40x | 1.50x | 0.40x |
 
 ### Scoring (absolute, not rank-based)
 ```
 score = 0.40 * sharpe_norm + 0.30 * return_norm + 0.20 * (1-dd_norm) + 0.10 * consistency
 ```
-- 21d rolling window
-- Absolute thresholds (all good bots → no one punished)
+- 21d rolling window, absolute thresholds
 
-## Quick Start
+### Compound + Supervisor Integration
+- **BTC/ETH:** compound ON — reinvest PnL, supervisor controls BASE allocation only
+- **SOL/XRP/HYPE:** compound OFF — supervisor controls full capital + risk
+- Result: $50K → $100K in 225d (+21.6% vs equal allocation)
 
+## Live Infrastructure
+
+### L2 Recorder (AWS EC2)
+- **Instance:** t2.micro, Amazon Linux 2023, eu-central-1 (Frankfurt)
+- **Elastic IP:** 63.178.163.203
+- **Instance ID:** i-042b5fa60b4081d5a
+- **Recording:** BTC, ETH, SOL — L2 book (20 levels) + trades, 24/7
+- **Service:** systemd `botmm-recorder` (auto-restart, auto-start on boot)
+- **Monitoring:** cron every 5min → Discord alerts (disk, freshness, API, memory)
+- **Data path:** `/home/ec2-user/BotMM/data/orderbook/{SYMBOL}/{date}/`
+- **Storage:** ~60 MB/day, 8GB EBS → ~4 months before cleanup
+- **Deployed:** 2026-02-11
+- **SSH:** `ssh -i deploy/botmm-key.pem ec2-user@63.178.163.203`
+- **Key file:** `deploy/botmm-key.pem` (gitignored via `*.pem`)
+
+### Useful Commands (EC2)
 ```bash
-pip install -r requirements.txt
-
-# Run candle-based backtest
-py backtest/mm_backtester.py --symbol BTCUSDT --days 365 --spread 2.0 --size 150 --levels 2 --skew 0.3 --bias --bias-strength 0.2
-
-# Run with all ML features + compound
-py backtest/mm_backtester.py --symbol BTCUSDT --days 365 --spread 2.0 --size 150 --levels 2 --skew 0.3 --bias --bias-strength 0.2 --auto-tune --toxicity --compound
-
-# Run optimizer (find best params)
-py scripts/run_mm_optimizer.py --symbol BTCUSDT --days 365 --quick --workers 10
-
-# Run daily reoptimizer
-py scripts/daily_reoptimize.py --dry-run
-
-# Run meta-supervisor backtest simulation
-py scripts/backtest_supervisor.py --capital 50000 --days 365 --window 21
-
-# Train ML model
-py scripts/train_fill_model.py --symbol BTCUSDT --days 365
-
-# Record live L2 data
-py scripts/record_orderbook.py --symbols BTC ETH SOL --levels 20
-
-# Run order book replay backtest (needs recorded data)
-py scripts/run_ob_backtest.py --symbol BTC --date 2026-02-12
-
-# Run tests
-py -m pytest tests/ -v
+sudo systemctl status botmm-recorder
+journalctl -u botmm-recorder -f
+du -sh data/orderbook/
+scp -i deploy/botmm-key.pem -r ec2-user@63.178.163.203:~/BotMM/data/orderbook/ ./data/orderbook/
 ```
+
+### Data Requirements for Tick-Level Backtest
+| Cel | Minimum | Data |
+|-----|---------|------|
+| Smoke test | 1 day | ~12h L2 + trades |
+| Sensowny backtest (Sharpe) | 2-3 days | ≥2 daily PnL points |
+| Wiarygodne wyniki | 7+ days | statystyczna istotność |
+| Produkcyjny benchmark | 14-30 days | pełny obraz rynku |
 
 ## Production Cron Schedule
 
@@ -238,26 +286,56 @@ py -m pytest tests/ -v
 # 3. Bot hot-reloads live_params.json + allocations.json (~1h interval)
 ```
 
-## Fee Convention (Critical)
+## Quick Start
 
-- HL maker fee = -0.00015 (NEGATIVE = rebate, we GET money)
-- `total_fees` accumulates raw values (negative for rebates)
-- `net_pnl = realized_pnl - total_fees` (subtracting negative = adding rebate)
+```bash
+pip install -r requirements.txt
+
+# Backtest (candle-based)
+py backtest/mm_backtester.py --symbol BTCUSDT --days 365 --spread 2.0 --size 150 --levels 2 --skew 0.3 --bias --bias-strength 0.2
+
+# Backtest with ML + compound
+py backtest/mm_backtester.py --symbol BTCUSDT --days 365 --spread 2.0 --size 150 --levels 2 --skew 0.3 --bias --bias-strength 0.2 --auto-tune --toxicity --compound
+
+# Order book replay backtest (needs recorded data)
+py scripts/run_ob_backtest.py --symbol BTC --date 2026-02-12
+
+# Optimizer
+py scripts/run_mm_optimizer.py --symbol BTCUSDT --days 365 --quick --workers 10
+
+# Record live L2 data
+py scripts/record_orderbook.py --symbols BTC ETH SOL --levels 20
+
+# Tests
+py -m pytest tests/ -v
+```
 
 ## Dependencies
 
 ```
 numpy>=1.21.0
+pandas>=1.4.0
 requests>=2.28.0
 python-dotenv>=1.0.0
-tqdm>=4.65.0
+aiohttp>=3.8.0
 hyperliquid-python-sdk>=0.1.0
 eth-account>=0.8.0
-aiohttp>=3.8.0
+tqdm>=4.65.0
+websockets>=12.0
 scikit-learn>=1.3.0
 joblib>=1.3.0
-websockets>=12.0
 ```
+
+## Bug Fixes Log
+
+### 2026-02-11: HL price/size rounding (this repo)
+- **Problem:** Hardcoded `PRICE_DECIMALS` / `SIZE_DECIMALS` dicts, no sig figs enforcement, missing XRP
+- **Fix:** Dynamic `szDecimals` from `meta()`, `_round_price()` enforces 5 sig figs + `6-szDecimals` max decimals, `_to_hl_symbol()` auto-resolves any suffix against HL universe
+- **Impact:** Prevents order rejections from HL API ("Price must be divisible by tick size")
+
+### 2026-02-11: setup_ec2.sh missing cronie
+- **Problem:** `crontab: command not found` on Amazon Linux 2023
+- **Fix:** Added `cronie` to dnf install in setup script
 
 ## Commit History
 

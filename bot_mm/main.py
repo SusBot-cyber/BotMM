@@ -225,16 +225,19 @@ async def run(args: argparse.Namespace):
         else:
             logger.warning("Dead man's switch failed — orders may persist if bot crashes")
 
-        # Run all symbols concurrently + DMS heartbeat
+        # Run all symbols concurrently + DMS heartbeat + metadata monitor
         tasks = [
             asyncio.create_task(_run_symbol(exchange, ac, shutdown_event))
             for ac in asset_configs
         ]
         dms_task = asyncio.create_task(_dms_heartbeat(exchange, shutdown_event))
+        meta_task = asyncio.create_task(
+            _metadata_monitor(exchange, notifier, shutdown_event)
+        )
 
         # Wait for shutdown signal or any task failure
         done, pending = await asyncio.wait(
-            tasks + [dms_task],
+            tasks + [dms_task, meta_task],
             return_when=asyncio.FIRST_EXCEPTION,
         )
 
@@ -248,12 +251,13 @@ async def run(args: argparse.Namespace):
                 except (asyncio.TimeoutError, asyncio.CancelledError):
                     t.cancel()
 
-        # Cancel DMS
-        dms_task.cancel()
-        try:
-            await dms_task
-        except asyncio.CancelledError:
-            pass
+        # Cancel background tasks
+        for bg in (dms_task, meta_task):
+            bg.cancel()
+            try:
+                await bg
+            except asyncio.CancelledError:
+                pass
 
     except KeyboardInterrupt:
         logger.info("KeyboardInterrupt — shutting down")
@@ -287,6 +291,30 @@ async def _dms_heartbeat(exchange: HyperliquidMMExchange, shutdown_event: asynci
             break
         except Exception:
             logger.warning("DMS heartbeat failed", exc_info=True)
+
+
+async def _metadata_monitor(
+    exchange: HyperliquidMMExchange,
+    notifier,
+    shutdown_event: asyncio.Event,
+    interval_s: int = 3600,
+):
+    """Periodically refresh HL metadata and alert on szDecimals / asset changes."""
+    while not shutdown_event.is_set():
+        try:
+            await asyncio.sleep(interval_s)
+            if shutdown_event.is_set():
+                break
+            changes = await exchange.refresh_metadata()
+            if changes and notifier and notifier.is_configured:
+                msg = "\n".join(f"• **{k}**: {v}" for k, v in changes.items())
+                await notifier.send_alert(
+                    "HL Metadata Changed", msg, level="warning",
+                )
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            logger.warning("Metadata monitor failed", exc_info=True)
 
 
 def main():

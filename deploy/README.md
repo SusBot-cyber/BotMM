@@ -2,31 +2,50 @@
 
 Deploy the L2 order book recorder on AWS EC2 free tier for 24/7 data collection.
 
-## 1. AWS Account Setup (Free Tier)
+**Current deployment:** EC2 t2.micro, eu-central-1 (Frankfurt), Elastic IP: `63.178.163.203`
+
+## 1. AWS Account & EC2 Setup (Free Tier)
 
 1. **Create AWS account** at [aws.amazon.com](https://aws.amazon.com/) (12 months free tier)
-2. **Launch EC2 instance:**
-   - AMI: Amazon Linux 2023
-   - Instance type: **t2.micro** (1 vCPU, 1GB RAM — free tier)
-   - Storage: **8GB gp3 EBS** (30GB included in free tier)
-   - Security group: Allow **SSH (port 22)** from your IP only
-3. **Create key pair** → download `.pem` file
+2. **Go to EC2:** Search "EC2" in top bar → click **EC2**
+3. **Set region:** Top-right corner → **eu-central-1 (Frankfurt)** (low latency to HL)
+4. **Launch EC2 instance:** Click **Launch instance**
+   - **Name:** `botmm-recorder`
+   - **AMI:** Amazon Linux 2023 (Free tier eligible, default)
+   - **Instance type:** **t2.micro** (1 vCPU, 1GB RAM — free tier)
+   - **Key pair:** Click **Create new key pair**
+     - Name: `botmm-key`, Type: RSA, Format: `.pem`
+     - **Save the `.pem` file!** You need it for SSH access
+   - **Network:** Edit → ✅ Allow SSH traffic → **My IP** (not Anywhere!)
+   - **Storage:** **8GB gp3** (default, 30GB included in free tier)
+   - Click **Launch instance**
+
+5. **Elastic IP (stałe IP, darmowe gdy przypisane):**
+   - Left menu → **Elastic IPs** (under Network & Security)
+   - **Allocate Elastic IP address** → **Allocate**
+   - Select IP → **Actions** → **Associate Elastic IP address**
+   - Select instance `botmm-recorder` → **Associate**
 
 ## 2. Connect & Deploy
 
 ```bash
+# Fix PEM permissions (Windows — required, otherwise SSH rejects key)
+icacls botmm-key.pem /inheritance:r /grant:r "%USERNAME%:(R)"
+
 # SSH into EC2
-ssh -i botmm-key.pem ec2-user@<public-ip>
+ssh -i botmm-key.pem ec2-user@<elastic-ip>
+
+# Install git (not pre-installed on AL2023)
+sudo dnf install -y git
 
 # Clone repo
 git clone https://github.com/SusBot-cyber/BotMM.git
 cd BotMM
 
-# Run setup (installs Python, venv, systemd service, logrotate, cron)
+# Run setup (installs Python 3.11, venv, systemd service, logrotate, cron)
 sudo bash deploy/setup_ec2.sh
 
-# Configure
-cp deploy/.env.example deploy/.env
+# Configure (optional — Discord webhook for alerts)
 nano deploy/.env  # add your Discord webhook URL
 ```
 
@@ -35,7 +54,6 @@ nano deploy/.env  # add your Discord webhook URL
 ```bash
 # Start service
 sudo systemctl start botmm-recorder
-sudo systemctl enable botmm-recorder
 
 # Check status
 sudo systemctl status botmm-recorder
@@ -43,6 +61,8 @@ sudo systemctl status botmm-recorder
 # Follow live logs
 journalctl -u botmm-recorder -f
 ```
+
+Service auto-starts on boot and auto-restarts on crash (30s delay).
 
 ## 4. Monitor
 
@@ -60,16 +80,16 @@ ls -la data/orderbook/BTC/$(date +%Y-%m-%d)/
 bash deploy/monitor.sh
 ```
 
-Automated monitoring runs every 5 minutes via cron and sends Discord alerts on issues.
+Automated monitoring runs every 5 minutes via cron. Checks: service status, disk usage, data freshness, HL API reachability, memory. Sends Discord alerts on issues (rate-limited to 1 per 30min).
 
 ## 5. Download Data (Local Machine)
 
 ```bash
-# From your local machine — download all orderbook data
-scp -i botmm-key.pem -r ec2-user@<ip>:~/BotMM/data/orderbook/ ./data/orderbook/
+# From your local machine (Windows) — download all orderbook data
+scp -i botmm-key.pem -r ec2-user@<elastic-ip>:~/BotMM/data/orderbook/ ./data/orderbook/
 
 # Download specific day
-scp -i botmm-key.pem -r ec2-user@<ip>:~/BotMM/data/orderbook/BTC/2026-02-15/ ./data/orderbook/BTC/2026-02-15/
+scp -i botmm-key.pem -r ec2-user@<elastic-ip>:~/BotMM/data/orderbook/BTC/2026-02-15/ ./data/orderbook/BTC/2026-02-15/
 ```
 
 ## 6. S3 Backup (Optional)
@@ -134,6 +154,9 @@ sudo systemctl disable botmm-recorder
 
 | Problem | Solution |
 |---------|----------|
+| `UNPROTECTED PRIVATE KEY FILE` | Windows: `icacls botmm-key.pem /inheritance:r /grant:r "%USERNAME%:(R)"` |
+| `git: command not found` | `sudo dnf install -y git` (not pre-installed on AL2023) |
+| `crontab: command not found` | `sudo dnf install -y cronie && sudo systemctl enable crond --now` |
 | Service won't start | `journalctl -u botmm-recorder -e` — check error logs |
 | No data files | Check WebSocket connectivity, HL API status |
 | Disk full | `find data/orderbook -name "*.csv" -mtime +30 -delete` |
@@ -142,6 +165,8 @@ sudo systemctl disable botmm-recorder
 | Python not found | Verify venv: `ls -la /home/ec2-user/BotMM/venv/bin/python` |
 | Permission denied | `chown -R ec2-user:ec2-user /home/ec2-user/BotMM` |
 | Memory OOM | Reduce `MemoryMax` in service file or reduce symbols |
+| SSH timeout | Check Security Group → Inbound rules → SSH from your current IP |
+| Changed home IP | Update Security Group: EC2 → Security Groups → Edit inbound → update SSH rule |
 
 ## File Structure
 
