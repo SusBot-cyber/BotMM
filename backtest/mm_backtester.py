@@ -95,6 +95,10 @@ class MMBacktestResult:
     bearish_pct: float = 0.0
     neutral_pct: float = 0.0
 
+    # ML fill prediction stats
+    ml_skipped_quotes: int = 0
+    ml_widened_quotes: int = 0
+
     # Daily breakdown
     daily_pnls: list = field(default_factory=list)
 
@@ -121,6 +125,9 @@ class MMBacktester:
         atr_period: int = 14,
         use_bias: bool = False,
         bias_strength: float = 0.5,
+        ml_model_path: Optional[str] = None,
+        ml_skip_threshold: float = 0.3,
+        ml_adverse_threshold: float = 0.6,
     ):
         self.quote_params = quote_params or QuoteParams()
         self.maker_fee = maker_fee
@@ -131,6 +138,16 @@ class MMBacktester:
         self.atr_period = atr_period
         self.use_bias = use_bias
         self.bias_strength = bias_strength
+        self.ml_skip_threshold = ml_skip_threshold
+        self.ml_adverse_threshold = ml_adverse_threshold
+
+        # Load ML fill predictor if model path provided
+        if ml_model_path:
+            from bot_mm.ml.fill_predictor import FillPredictor
+            self.fill_predictor = FillPredictor()
+            self.fill_predictor.load(ml_model_path)
+        else:
+            self.fill_predictor = None
 
     def run(self, candles: List[Candle], symbol: str = "BTCUSDT") -> MMBacktestResult:
         """Run MM backtest simulation on candle data."""
@@ -223,6 +240,34 @@ class MMBacktester:
 
             # Simulate fills based on candle range
             for quote in quotes:
+                # ML fill prediction: skip or widen quotes
+                if self.fill_predictor and self.fill_predictor.is_trained:
+                    features = self.fill_predictor.extract_features(
+                        candle=candle,
+                        prev_candle=candles[i-1] if i > 0 else candle,
+                        mid_price=mid_price,
+                        quote_price=quote.price,
+                        quote_side=quote.side,
+                        volatility_pct=volatility_pct,
+                        inventory_ratio=abs(pos_usd) / self.max_position_usd,
+                        vol_regime=1.0,
+                        candle_idx=i,
+                    )
+                    fill_prob, adverse_prob = self.fill_predictor.predict(features)
+
+                    # Skip low-probability fills
+                    if fill_prob < self.ml_skip_threshold:
+                        result.ml_skipped_quotes += 1
+                        continue
+
+                    # Widen spread for high adverse selection risk
+                    if adverse_prob > self.ml_adverse_threshold:
+                        result.ml_widened_quotes += 1
+                        if quote.side == "buy":
+                            quote.price *= (1 - 0.0001)  # move bid down
+                        else:
+                            quote.price *= (1 + 0.0001)  # move ask up
+
                 fill_result = self._simulate_fill(quote, candle, mid_price, volatility_pct)
 
                 if fill_result is not None:
@@ -467,6 +512,14 @@ def print_results(result: MMBacktestResult, params: QuoteParams):
         print(f"  {'Monthly (projected)':<30} {'$'+format(monthly, ',.0f'):>15}")
         print(f"  {'Annual (projected)':<30} {'$'+format(annual, ',.0f'):>15}")
 
+    # ML fill prediction stats
+    if result.ml_skipped_quotes > 0 or result.ml_widened_quotes > 0:
+        print()
+        print(f"  {'ML Stats':<30}")
+        print(f"  {'-'*45}")
+        print(f"  {'Quotes skipped (low fill %)':<30} {result.ml_skipped_quotes:>15}")
+        print(f"  {'Quotes widened (high adverse)':<30} {result.ml_widened_quotes:>15}")
+
     # Daily PnL distribution
     if result.daily_pnls:
         pos_days = sum(1 for d in result.daily_pnls if d > 0)
@@ -501,6 +554,9 @@ def main():
     parser.add_argument("--data-dir", default=None, help="Data cache directory")
     parser.add_argument("--bias", action="store_true", help="Enable directional bias (Kalman+QQE)")
     parser.add_argument("--bias-strength", type=float, default=0.5, help="Bias strength 0-1")
+    parser.add_argument("--ml-model", default=None, help="Path to trained fill model (.joblib)")
+    parser.add_argument("--ml-skip", type=float, default=0.3, help="Skip quotes below this fill probability")
+    parser.add_argument("--ml-adverse", type=float, default=0.6, help="Widen spread above this adverse probability")
     args = parser.parse_args()
 
     np.random.seed(args.seed)
@@ -545,6 +601,9 @@ def main():
         capital=args.capital,
         use_bias=args.bias,
         bias_strength=args.bias_strength,
+        ml_model_path=args.ml_model,
+        ml_skip_threshold=args.ml_skip,
+        ml_adverse_threshold=args.ml_adverse,
     )
 
     result = bt.run(candles, args.symbol)

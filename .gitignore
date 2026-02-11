@@ -13,3 +13,4 @@ backtest/results/*.html
 *.log
 .idea/
 .vscode/
+models/*.joblib
