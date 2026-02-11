@@ -104,6 +104,13 @@ class MMBacktestResult:
     toxic_fills_pct: float = 0.0
     tox_spread_mult_avg: float = 1.0
 
+    # Auto-tuner stats
+    tuner_adjustments: int = 0
+    tuner_max_drift_pct: float = 0.0
+    tuner_final_spread_bps: float = 0.0
+    tuner_final_size_usd: float = 0.0
+    tuner_final_skew: float = 0.0
+
     # Daily breakdown
     daily_pnls: list = field(default_factory=list)
 
@@ -134,6 +141,9 @@ class MMBacktester:
         ml_skip_threshold: float = 0.3,
         ml_adverse_threshold: float = 0.6,
         use_toxicity: bool = False,
+        use_auto_tune: bool = False,
+        auto_tune_eval_hours: float = 4.0,
+        auto_tune_window_hours: float = 24.0,
     ):
         self.quote_params = quote_params or QuoteParams()
         self.maker_fee = maker_fee
@@ -147,6 +157,9 @@ class MMBacktester:
         self.ml_skip_threshold = ml_skip_threshold
         self.ml_adverse_threshold = ml_adverse_threshold
         self.use_toxicity = use_toxicity
+        self.use_auto_tune = use_auto_tune
+        self.auto_tune_eval_hours = auto_tune_eval_hours
+        self.auto_tune_window_hours = auto_tune_window_hours
 
         # Load ML fill predictor if model path provided
         if ml_model_path:
@@ -183,6 +196,33 @@ class MMBacktester:
             from bot_mm.ml.toxicity import ToxicityDetector
             toxicity = ToxicityDetector(lookback_fills=50, measurement_bars=5)
 
+        # Auto-parameter tuner
+        tuner = None
+        if self.use_auto_tune:
+            from bot_mm.ml.auto_tuner import AutoParameterTuner
+            from bot_mm.config import AssetMMConfig, RiskLimits
+            tuner_config = AssetMMConfig(
+                symbol=symbol,
+                quote=QuoteParams(
+                    base_spread_bps=self.quote_params.base_spread_bps,
+                    vol_multiplier=self.quote_params.vol_multiplier,
+                    inventory_skew_factor=self.quote_params.inventory_skew_factor,
+                    order_size_usd=self.quote_params.order_size_usd,
+                    num_levels=self.quote_params.num_levels,
+                    min_spread_bps=self.quote_params.min_spread_bps,
+                    max_spread_bps=self.quote_params.max_spread_bps,
+                ),
+                risk=RiskLimits(max_daily_loss_usd=self.max_daily_loss),
+            )
+            # Use simulated time (1 candle = 1 hour = 3600s)
+            sim_time = [0.0]
+            tuner = AutoParameterTuner(
+                tuner_config,
+                evaluation_interval_hours=self.auto_tune_eval_hours,
+                window_hours=self.auto_tune_window_hours,
+                _time_fn=lambda: sim_time[0],
+            )
+
         # Compute ATR
         atrs = self._compute_atr(candles)
 
@@ -201,6 +241,10 @@ class MMBacktester:
             atr = atrs[i]
             mid_price = (candle.high + candle.low) / 2.0
             volatility_pct = atr / mid_price if mid_price > 0 else 0.001
+
+            # Advance simulated time for auto-tuner (1 candle = 1 hour)
+            if tuner is not None:
+                sim_time[0] = (i - self.atr_period) * 3600.0
 
             # Update toxicity with new bar
             if toxicity is not None:
@@ -237,6 +281,19 @@ class MMBacktester:
                 result.risk_halts += 1
                 continue
 
+            # Auto-tuner: update metrics and evaluate
+            if tuner is not None:
+                inv_pct = abs(pos_usd) / self.max_position_usd if self.max_position_usd > 0 else 0
+                tuner.on_bar(equity, inv_pct)
+                changes = tuner.evaluate()
+                if changes:
+                    # Apply tuned params to quoter for next quotes
+                    state = tuner.get_current_params()
+                    quoter.params.base_spread_bps = state.base_spread_bps
+                    quoter.params.vol_multiplier = state.vol_multiplier
+                    quoter.params.inventory_skew_factor = state.inventory_skew_factor
+                    quoter.params.order_size_usd = state.order_size_usd
+
             # Generate quotes
             quotes = quoter.calculate_quotes(
                 mid_price=mid_price,
@@ -266,6 +323,9 @@ class MMBacktester:
 
             # Simulate fills based on candle range
             for quote in quotes:
+                # Track quote for auto-tuner
+                if tuner is not None:
+                    tuner.on_quote(quote.side, quote.price, quote.size)
                 # ML fill prediction: skip or widen quotes
                 if self.fill_predictor and self.fill_predictor.is_trained:
                     features = self.fill_predictor.extract_features(
@@ -328,6 +388,10 @@ class MMBacktester:
                     # Record fill for toxicity tracking
                     if toxicity is not None:
                         toxicity.on_fill(quote.side, fill_price, mid_price, fill_size, candle.timestamp)
+
+                    # Record fill for auto-tuner
+                    if tuner is not None:
+                        tuner.on_fill(quote.side, fill_price, fill_size, rpnl + fee_impact)
 
                     trade_log.append(MMTradeLog(
                         timestamp=candle.timestamp,
@@ -398,6 +462,15 @@ class MMBacktester:
                 result.bullish_pct = regime_counts[1] / total_regimes * 100
                 result.bearish_pct = regime_counts[-1] / total_regimes * 100
                 result.neutral_pct = regime_counts[0] / total_regimes * 100
+
+        # Auto-tuner stats
+        if tuner is not None:
+            ts = tuner.summary()
+            result.tuner_adjustments = ts["adjustments_count"]
+            result.tuner_max_drift_pct = ts["max_drift_pct"]
+            result.tuner_final_spread_bps = ts["base_spread_bps"]
+            result.tuner_final_size_usd = ts["order_size_usd"]
+            result.tuner_final_skew = ts["inventory_skew_factor"]
 
         return result
 
@@ -565,6 +638,16 @@ def print_results(result: MMBacktestResult, params: QuoteParams):
         print(f"  {'Toxic fills %':<30} {result.toxic_fills_pct:>14.1f}%")
         print(f"  {'Avg spread multiplier':<30} {result.tox_spread_mult_avg:>15.2f}")
 
+    # Auto-tuner stats
+    if result.tuner_adjustments > 0 or result.tuner_final_spread_bps > 0:
+        print(f"\n  {'Auto-Tuner':<30}")
+        print(f"  {'-'*45}")
+        print(f"  {'Adjustments':<30} {result.tuner_adjustments:>15}")
+        print(f"  {'Max drift %':<30} {result.tuner_max_drift_pct:>14.1f}%")
+        print(f"  {'Final spread (bps)':<30} {result.tuner_final_spread_bps:>15.2f}")
+        print(f"  {'Final size ($)':<30} {'$'+format(result.tuner_final_size_usd, ',.0f'):>15}")
+        print(f"  {'Final skew':<30} {result.tuner_final_skew:>15.2f}")
+
     # Daily PnL distribution
     if result.daily_pnls:
         pos_days = sum(1 for d in result.daily_pnls if d > 0)
@@ -603,6 +686,9 @@ def main():
     parser.add_argument("--ml-skip", type=float, default=0.3, help="Skip quotes below this fill probability")
     parser.add_argument("--ml-adverse", type=float, default=0.6, help="Widen spread above this adverse probability")
     parser.add_argument("--toxicity", action="store_true", help="Enable toxicity-based spread adjustment")
+    parser.add_argument("--auto-tune", action="store_true", help="Enable runtime auto-parameter tuning")
+    parser.add_argument("--tune-eval-hours", type=float, default=4.0, help="Auto-tuner evaluation interval (hours)")
+    parser.add_argument("--tune-window-hours", type=float, default=24.0, help="Auto-tuner rolling window (hours)")
     args = parser.parse_args()
 
     np.random.seed(args.seed)
@@ -651,6 +737,9 @@ def main():
         ml_skip_threshold=args.ml_skip,
         ml_adverse_threshold=args.ml_adverse,
         use_toxicity=args.toxicity,
+        use_auto_tune=args.auto_tune,
+        auto_tune_eval_hours=args.tune_eval_hours,
+        auto_tune_window_hours=args.tune_window_hours,
     )
 
     result = bt.run(candles, args.symbol)
