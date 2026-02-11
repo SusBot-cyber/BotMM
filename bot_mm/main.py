@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 from bot_mm.config import MMBotConfig, AssetMMConfig, QuoteParams, RiskLimits, Exchange
 from bot_mm.exchanges.hl_mm import HyperliquidMMExchange
 from bot_mm.strategies.basic_mm import BasicMMStrategy
+from bot_mm.utils.notifier import MMDiscordNotifier
 
 logger = logging.getLogger("bot_mm")
 
@@ -141,6 +142,10 @@ async def run(args: argparse.Namespace):
             ac.quote.order_size_usd, ac.risk.max_position_usd,
         )
 
+    # Discord notifier
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL", "")
+    notifier = MMDiscordNotifier(webhook_url) if webhook_url else None
+
     # Validate credentials
     private_key = config.hl_private_key
     if not private_key:
@@ -172,6 +177,18 @@ async def run(args: argparse.Namespace):
     try:
         # Connect to exchange
         await exchange.connect()
+
+        # Send startup notification
+        if notifier and notifier.is_configured:
+            await notifier.send_startup(
+                symbols=[c.symbol for c in asset_configs],
+                exchange="Hyperliquid " + ("testnet" if is_testnet else "mainnet"),
+                config={
+                    "capital": f"${sum(c.capital_usd for c in asset_configs):,.0f}",
+                    "spread": f"{asset_configs[0].quote.base_spread_bps} bps",
+                    "size": f"${asset_configs[0].quote.order_size_usd:,.0f}",
+                },
+            )
 
         # Set dead man's switch (cancel orders if bot dies, 30s timeout)
         dms_ok = await exchange.set_dead_mans_switch(30_000)
@@ -213,8 +230,10 @@ async def run(args: argparse.Namespace):
     except KeyboardInterrupt:
         logger.info("KeyboardInterrupt — shutting down")
         shutdown_event.set()
-    except Exception:
+    except Exception as exc:
         logger.exception("Fatal error")
+        if notifier and notifier.is_configured:
+            await notifier.send_alert("Fatal Error", str(exc), level="error")
         # Emergency cancel all symbols
         for ac in asset_configs:
             try:
@@ -222,6 +241,9 @@ async def run(args: argparse.Namespace):
             except Exception:
                 pass
     finally:
+        # Send shutdown notification
+        if notifier and notifier.is_configured:
+            await notifier.send_shutdown("Graceful shutdown")
         await exchange.disconnect()
         logger.info("BotMM stopped")
 

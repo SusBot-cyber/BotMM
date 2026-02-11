@@ -1,0 +1,22 @@
+[Unit]
+Description=BotMM L2 Order Book Recorder
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/home/ec2-user/BotMM
+ExecStart=/home/ec2-user/BotMM/venv/bin/python scripts/record_orderbook.py --symbols BTC ETH SOL --levels 20 --stats-interval 300
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+# Resource limits for t2.micro (1 vCPU, 1GB RAM)
+MemoryMax=768M
+CPUQuota=80%
+
+[Install]
+WantedBy=multi-user.target
