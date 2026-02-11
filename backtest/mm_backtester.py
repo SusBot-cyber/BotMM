@@ -111,6 +111,12 @@ class MMBacktestResult:
     tuner_final_size_usd: float = 0.0
     tuner_final_skew: float = 0.0
 
+    # Dynamic sizer stats
+    dynamic_size_avg: float = 0.0
+    dynamic_size_min: float = 0.0
+    dynamic_size_max: float = 0.0
+    dynamic_size_std: float = 0.0
+
     # Daily breakdown
     daily_pnls: list = field(default_factory=list)
 
@@ -144,6 +150,7 @@ class MMBacktester:
         use_auto_tune: bool = False,
         auto_tune_eval_hours: float = 4.0,
         auto_tune_window_hours: float = 24.0,
+        use_dynamic_size: bool = False,
     ):
         self.quote_params = quote_params or QuoteParams()
         self.maker_fee = maker_fee
@@ -160,6 +167,7 @@ class MMBacktester:
         self.use_auto_tune = use_auto_tune
         self.auto_tune_eval_hours = auto_tune_eval_hours
         self.auto_tune_window_hours = auto_tune_window_hours
+        self.use_dynamic_size = use_dynamic_size
 
         # Load ML fill predictor if model path provided
         if ml_model_path:
@@ -221,6 +229,21 @@ class MMBacktester:
                 evaluation_interval_hours=self.auto_tune_eval_hours,
                 window_hours=self.auto_tune_window_hours,
                 _time_fn=lambda: sim_time[0],
+            )
+
+        # Dynamic sizer
+        dynamic_sizer = None
+        dynamic_sizes = []
+        rolling_fills = []  # rolling window for fill rate estimation
+        rolling_window = 100  # bars
+        if self.use_dynamic_size:
+            from bot_mm.ml.dynamic_sizer import DynamicSizer
+            dynamic_sizer = DynamicSizer(
+                base_size_usd=self.quote_params.order_size_usd,
+                capital_usd=self.capital,
+                max_size_pct=0.15,
+                min_size_usd=20.0,
+                max_size_usd=self.max_position_usd,
             )
 
         # Compute ATR
@@ -293,6 +316,48 @@ class MMBacktester:
                     quoter.params.vol_multiplier = state.vol_multiplier
                     quoter.params.inventory_skew_factor = state.inventory_skew_factor
                     quoter.params.order_size_usd = state.order_size_usd
+
+            # Dynamic size: recompute order size based on conditions
+            if dynamic_sizer is not None:
+                # Use auto-tuner's size as base when both are active
+                if tuner is not None:
+                    dynamic_sizer.base_size_usd = tuner.get_current_params().order_size_usd
+
+                # Rolling fill rate (last N bars)
+                rolling_fills.append(0)  # placeholder, updated on fill
+                if len(rolling_fills) > rolling_window:
+                    rolling_fills.pop(0)
+                recent_fill_count = sum(rolling_fills)
+                est_fill_rate = min(1.0, recent_fill_count / (len(rolling_fills) * 2)) if rolling_fills else 0.5
+
+                # Calculate drawdown as pct of daily limit
+                dd_pct = max_dd / self.max_daily_loss if self.max_daily_loss > 0 else 0
+
+                # Get toxicity score
+                tox_score = 0.0
+                if toxicity is not None and toxicity.fills_measured > 10:
+                    tox_score = toxicity.summary().get("avg_toxicity", 0.0)
+
+                # ATR-based vol ratio
+                avg_atr = np.mean(atrs[max(0, i-50):i+1]) if i > 0 else atr
+                vol_ratio_current = atr  # current ATR
+                vol_ratio_avg = avg_atr if avg_atr > 0 else atr  # baseline ATR
+
+                inv_pct_for_sizer = pos_usd / self.max_position_usd if self.max_position_usd > 0 else 0
+
+                computed_size = dynamic_sizer.compute_size(
+                    current_vol=vol_ratio_current,
+                    avg_vol=vol_ratio_avg,
+                    fill_rate=est_fill_rate,
+                    inventory_pct=inv_pct_for_sizer,
+                    toxicity_score=tox_score,
+                    drawdown_pct=dd_pct,
+                    equity=equity,
+                )
+                dynamic_sizes.append(computed_size)
+
+                # Override quote size
+                quoter.params.order_size_usd = computed_size
 
             # Generate quotes
             quotes = quoter.calculate_quotes(
@@ -393,6 +458,12 @@ class MMBacktester:
                     if tuner is not None:
                         tuner.on_fill(quote.side, fill_price, fill_size, rpnl + fee_impact)
 
+                    # Record fill for dynamic sizer
+                    if dynamic_sizer is not None:
+                        dynamic_sizer.record_fill(rpnl + fee_impact)
+                        if rolling_fills:
+                            rolling_fills[-1] += 1  # increment current bar's fill count
+
                     trade_log.append(MMTradeLog(
                         timestamp=candle.timestamp,
                         side=quote.side,
@@ -471,6 +542,13 @@ class MMBacktester:
             result.tuner_final_spread_bps = ts["base_spread_bps"]
             result.tuner_final_size_usd = ts["order_size_usd"]
             result.tuner_final_skew = ts["inventory_skew_factor"]
+
+        # Dynamic sizer stats
+        if dynamic_sizer is not None and dynamic_sizes:
+            result.dynamic_size_avg = float(np.mean(dynamic_sizes))
+            result.dynamic_size_min = float(np.min(dynamic_sizes))
+            result.dynamic_size_max = float(np.max(dynamic_sizes))
+            result.dynamic_size_std = float(np.std(dynamic_sizes))
 
         return result
 
@@ -648,6 +726,15 @@ def print_results(result: MMBacktestResult, params: QuoteParams):
         print(f"  {'Final size ($)':<30} {'$'+format(result.tuner_final_size_usd, ',.0f'):>15}")
         print(f"  {'Final skew':<30} {result.tuner_final_skew:>15.2f}")
 
+    # Dynamic sizer stats
+    if result.dynamic_size_avg > 0:
+        print(f"\n  {'Dynamic Sizer':<30}")
+        print(f"  {'-'*45}")
+        print(f"  {'Avg size ($)':<30} {'$'+format(result.dynamic_size_avg, ',.0f'):>15}")
+        print(f"  {'Min size ($)':<30} {'$'+format(result.dynamic_size_min, ',.0f'):>15}")
+        print(f"  {'Max size ($)':<30} {'$'+format(result.dynamic_size_max, ',.0f'):>15}")
+        print(f"  {'Size std ($)':<30} {'$'+format(result.dynamic_size_std, ',.0f'):>15}")
+
     # Daily PnL distribution
     if result.daily_pnls:
         pos_days = sum(1 for d in result.daily_pnls if d > 0)
@@ -687,6 +774,7 @@ def main():
     parser.add_argument("--ml-adverse", type=float, default=0.6, help="Widen spread above this adverse probability")
     parser.add_argument("--toxicity", action="store_true", help="Enable toxicity-based spread adjustment")
     parser.add_argument("--auto-tune", action="store_true", help="Enable runtime auto-parameter tuning")
+    parser.add_argument("--dynamic-size", action="store_true", help="Enable dynamic order size scaling")
     parser.add_argument("--tune-eval-hours", type=float, default=4.0, help="Auto-tuner evaluation interval (hours)")
     parser.add_argument("--tune-window-hours", type=float, default=24.0, help="Auto-tuner rolling window (hours)")
     args = parser.parse_args()
@@ -740,6 +828,7 @@ def main():
         use_auto_tune=args.auto_tune,
         auto_tune_eval_hours=args.tune_eval_hours,
         auto_tune_window_hours=args.tune_window_hours,
+        use_dynamic_size=args.dynamic_size,
     )
 
     result = bt.run(candles, args.symbol)
