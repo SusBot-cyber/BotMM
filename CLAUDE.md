@@ -369,4 +369,4 @@ joblib>=1.3.0
 18. `1a78260` — docs: add file naming convention rule (UPPER CASE for doc files)
 19. `3e4d41f` — refactor: remove HYPE from active assets (poor performance)
 20. `c8b3b50` — feat: monthly breakdown scripts + backtest results snapshot (225d)
-21. `xxxxxxx` — fix: HL maker fee +0.015% cost (not rebate), supervisor V3 tuning (+9% PnL)
+21. `46f9875` — fix: HL maker fee +0.015% cost (not rebate), supervisor V3 tuning (+9% PnL)
