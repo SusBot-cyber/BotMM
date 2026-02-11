@@ -84,6 +84,9 @@ class AssetMMConfig:
     # Directional bias
     bias: DirectionalBiasParams = field(default_factory=DirectionalBiasParams)
 
+    # Toxicity detection
+    use_toxicity: bool = False
+
 
 @dataclass
 class MMBotConfig:
@@ -161,6 +164,7 @@ class MMBotConfig:
                     slope_window=int(gf("BIAS_SLOPE_WINDOW", 5)),
                     bias_strength=gf("BIAS_STRENGTH", 0.5),
                 ),
+                use_toxicity=os.getenv(f"{prefix}_USE_TOXICITY", "false").lower() == "true",
             )
 
         return config

@@ -79,6 +79,13 @@ class BasicMMStrategy:
         self._bias = None
         self._current_bias: float = 0.0
         self._last_hour: Optional[int] = None
+
+        # Toxicity detector
+        self._toxicity = None
+        if getattr(config, 'use_toxicity', False):
+            from bot_mm.ml.toxicity import ToxicityDetector
+            self._toxicity = ToxicityDetector()
+
         if config.bias.enabled:
             from bot_mm.core.signals import DirectionalBias
             self._bias = DirectionalBias(
@@ -181,6 +188,15 @@ class BasicMMStrategy:
                 result = self._bias.update(mid_price)
                 if result is not None:
                     self._current_bias = result.bias
+                # Update toxicity on hourly bar
+                if self._toxicity is not None:
+                    self._toxicity.on_bar(mid_price)
+            self._last_hour = current_hour
+        elif self._toxicity is not None:
+            import datetime
+            current_hour = datetime.datetime.utcnow().hour
+            if self._last_hour is not None and current_hour != self._last_hour:
+                self._toxicity.on_bar(mid_price)
             self._last_hour = current_hour
 
         # 7. Generate quotes
@@ -199,6 +215,15 @@ class BasicMMStrategy:
             if self.inventory.should_pause_side(q.side, mid_price):
                 continue
             filtered.append(q)
+
+        # 8b. Toxicity-based spread adjustment
+        if self._toxicity is not None and self._toxicity.fills_measured > 10:
+            buy_mult, sell_mult = self._toxicity.get_side_multipliers()
+            for q in filtered:
+                if q.side == "buy":
+                    q.price = mid_price - (mid_price - q.price) * buy_mult
+                else:
+                    q.price = mid_price + (q.price - mid_price) * sell_mult
 
         # 9. Widen spread if risk is elevated
         if risk_status == RiskStatus.CRITICAL:
@@ -268,6 +293,10 @@ class BasicMMStrategy:
 
         realized = self.inventory.on_fill(side, current_price, size, fee)
 
+        # Record fill for toxicity tracking
+        if self._toxicity is not None:
+            self._toxicity.on_fill(side, current_price, current_price, size)
+
         logger.info(
             "FILL %s | %s %.6f @ %.2f | fee=%.4f | realized=$%.2f | pos=%.6f | net_pnl=$%.2f",
             self.symbol, side.upper(), size, current_price, fee,
@@ -286,14 +315,18 @@ class BasicMMStrategy:
             r = self._bias.last_result
             regime = r.regime.name if r else "WARMUP"
             bias_str = f" | bias={self._current_bias:+.3f} ({regime})"
+        tox_str = ""
+        if self._toxicity is not None and self._toxicity.fills_measured > 0:
+            s = self._toxicity.summary()
+            tox_str = f" | tox={s['avg_toxicity']:.3f} ({s['fills_measured']} fills)"
         logger.info(
             "STATUS %s | mid=%.2f | vol=%.4f%% | pos=%.6f ($%.2f) | "
-            "pnl=$%.2f (realized=$%.2f) | %s%s | uptime=%.0fs",
+            "pnl=$%.2f (realized=$%.2f) | %s%s%s | uptime=%.0fs",
             self.symbol, mid_price, self._volatility_pct * 100,
             self.inventory.state.position_size,
             abs(self.inventory.state.position_size * mid_price),
             self.inventory.total_pnl, self.inventory.net_pnl,
-            self.order_mgr.stats_str, bias_str, uptime,
+            self.order_mgr.stats_str, bias_str, tox_str, uptime,
         )
 
     def _log_summary(self):

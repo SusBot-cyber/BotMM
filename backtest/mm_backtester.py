@@ -99,6 +99,11 @@ class MMBacktestResult:
     ml_skipped_quotes: int = 0
     ml_widened_quotes: int = 0
 
+    # Toxicity stats
+    toxicity_avg: float = 0.0
+    toxic_fills_pct: float = 0.0
+    tox_spread_mult_avg: float = 1.0
+
     # Daily breakdown
     daily_pnls: list = field(default_factory=list)
 
@@ -128,6 +133,7 @@ class MMBacktester:
         ml_model_path: Optional[str] = None,
         ml_skip_threshold: float = 0.3,
         ml_adverse_threshold: float = 0.6,
+        use_toxicity: bool = False,
     ):
         self.quote_params = quote_params or QuoteParams()
         self.maker_fee = maker_fee
@@ -140,6 +146,7 @@ class MMBacktester:
         self.bias_strength = bias_strength
         self.ml_skip_threshold = ml_skip_threshold
         self.ml_adverse_threshold = ml_adverse_threshold
+        self.use_toxicity = use_toxicity
 
         # Load ML fill predictor if model path provided
         if ml_model_path:
@@ -170,6 +177,12 @@ class MMBacktester:
             from bot_mm.core.signals import DirectionalBias
             bias_obj = DirectionalBias(bias_strength=self.bias_strength)
 
+        # Toxicity detector
+        toxicity = None
+        if self.use_toxicity:
+            from bot_mm.ml.toxicity import ToxicityDetector
+            toxicity = ToxicityDetector(lookback_fills=50, measurement_bars=5)
+
         # Compute ATR
         atrs = self._compute_atr(candles)
 
@@ -188,6 +201,10 @@ class MMBacktester:
             atr = atrs[i]
             mid_price = (candle.high + candle.low) / 2.0
             volatility_pct = atr / mid_price if mid_price > 0 else 0.001
+
+            # Update toxicity with new bar
+            if toxicity is not None:
+                toxicity.on_bar(mid_price, atr)
 
             # Update directional bias with candle close
             if bias_obj is not None:
@@ -237,6 +254,15 @@ class MMBacktester:
                 best_ask = min(q.price for q in asks)
                 quoted_spread_bps = (best_ask - best_bid) / mid_price * 10000
                 spreads_quoted.append(quoted_spread_bps)
+
+            # Toxicity-based spread adjustment
+            if toxicity is not None and toxicity.fills_measured > 10:
+                buy_mult, sell_mult = toxicity.get_side_multipliers()
+                for q in quotes:
+                    if q.side == "buy":
+                        q.price = mid_price - (mid_price - q.price) * buy_mult
+                    else:
+                        q.price = mid_price + (q.price - mid_price) * sell_mult
 
             # Simulate fills based on candle range
             for quote in quotes:
@@ -299,6 +325,10 @@ class MMBacktester:
                     if rpnl != 0:
                         spreads_captured.append(abs(rpnl) / fill_size / mid_price * 10000)
 
+                    # Record fill for toxicity tracking
+                    if toxicity is not None:
+                        toxicity.on_fill(quote.side, fill_price, mid_price, fill_size, candle.timestamp)
+
                     trade_log.append(MMTradeLog(
                         timestamp=candle.timestamp,
                         side=quote.side,
@@ -352,6 +382,13 @@ class MMBacktester:
         result.fills_per_day = result.total_fills / max(result.days, 1)
         result.avg_spread_captured_bps = float(np.mean(spreads_captured)) if spreads_captured else 0
         result.avg_spread_quoted_bps = float(np.mean(spreads_quoted)) if spreads_quoted else 0
+
+        # Toxicity stats
+        if toxicity is not None:
+            tox_summary = toxicity.summary()
+            result.toxicity_avg = tox_summary["avg_toxicity"]
+            result.toxic_fills_pct = tox_summary["toxic_fills_pct"]
+            result.tox_spread_mult_avg = tox_summary["avg_spread_multiplier"]
 
         # Bias stats
         if bias_samples:
@@ -520,6 +557,14 @@ def print_results(result: MMBacktestResult, params: QuoteParams):
         print(f"  {'Quotes skipped (low fill %)':<30} {result.ml_skipped_quotes:>15}")
         print(f"  {'Quotes widened (high adverse)':<30} {result.ml_widened_quotes:>15}")
 
+    # Toxicity stats
+    if result.toxicity_avg > 0:
+        print(f"\n  {'Toxicity Analysis':<30}")
+        print(f"  {'-'*45}")
+        print(f"  {'Avg toxicity score':<30} {result.toxicity_avg:>15.3f}")
+        print(f"  {'Toxic fills %':<30} {result.toxic_fills_pct:>14.1f}%")
+        print(f"  {'Avg spread multiplier':<30} {result.tox_spread_mult_avg:>15.2f}")
+
     # Daily PnL distribution
     if result.daily_pnls:
         pos_days = sum(1 for d in result.daily_pnls if d > 0)
@@ -557,6 +602,7 @@ def main():
     parser.add_argument("--ml-model", default=None, help="Path to trained fill model (.joblib)")
     parser.add_argument("--ml-skip", type=float, default=0.3, help="Skip quotes below this fill probability")
     parser.add_argument("--ml-adverse", type=float, default=0.6, help="Widen spread above this adverse probability")
+    parser.add_argument("--toxicity", action="store_true", help="Enable toxicity-based spread adjustment")
     args = parser.parse_args()
 
     np.random.seed(args.seed)
@@ -604,6 +650,7 @@ def main():
         ml_model_path=args.ml_model,
         ml_skip_threshold=args.ml_skip,
         ml_adverse_threshold=args.ml_adverse,
+        use_toxicity=args.toxicity,
     )
 
     result = bt.run(candles, args.symbol)
