@@ -31,11 +31,11 @@ from bot_mm.config import QuoteParams
 
 # Asset profiles (optimal params from optimizer)
 ASSETS = {
-    "BTCUSDT": {"spread": 2.0, "skew": 0.3, "size": 150, "bias": True, "bias_str": 0.2},
-    "ETHUSDT": {"spread": 1.5, "skew": 0.3, "size": 150, "bias": True, "bias_str": 0.2},
-    "SOLUSDT": {"spread": 1.5, "skew": 0.5, "size": 150, "bias": False, "bias_str": 0.0},
-    "XRPUSDT": {"spread": 1.5, "skew": 0.5, "size": 150, "bias": True, "bias_str": 0.2},
-    "HYPEUSDT": {"spread": 1.5, "skew": 0.3, "size": 100, "bias": False, "bias_str": 0.0},
+    "BTCUSDT": {"spread": 2.0, "skew": 0.3, "size": 150, "bias": True, "bias_str": 0.2, "compound": True},
+    "ETHUSDT": {"spread": 1.5, "skew": 0.3, "size": 150, "bias": True, "bias_str": 0.2, "compound": True},
+    "SOLUSDT": {"spread": 1.5, "skew": 0.5, "size": 150, "bias": False, "bias_str": 0.0, "compound": False},
+    "XRPUSDT": {"spread": 1.5, "skew": 0.5, "size": 150, "bias": True, "bias_str": 0.2, "compound": False},
+    "HYPEUSDT": {"spread": 1.5, "skew": 0.3, "size": 100, "bias": False, "bias_str": 0.0, "compound": False},
 }
 
 
@@ -310,67 +310,84 @@ def main():
             daily_pnls[sym] = daily_pnls[sym][-min_days:]
     max_days = min_days
 
-    # Step 2: Simulate EQUAL allocation
+    # Step 2: Simulate EQUAL allocation (with compound for BTC/ETH)
     print("\n  Phase 2: Simulating EQUAL allocation...")
     equal_daily = []
+    # Track per-asset compound equity (starts at base_alloc)
+    eq_equity = {sym: base_alloc for sym in symbols}
     for day in range(max_days):
         day_total = 0.0
         for sym in symbols:
-            # Scale daily PnL from $1K base to per-asset allocation
-            day_total += daily_pnls[sym][day] * (base_alloc / 1000.0)
+            # PnL scales by current equity (compound) or fixed alloc
+            effective = eq_equity[sym]
+            day_pnl = daily_pnls[sym][day] * (effective / 1000.0)
+            day_total += day_pnl
+            # Compound: reinvest PnL into equity for BTC/ETH
+            if ASSETS[sym]["compound"]:
+                eq_equity[sym] += day_pnl
         equal_daily.append(day_total)
 
     equal_total = sum(equal_daily)
-    equal_equity = [args.capital + sum(equal_daily[:i+1]) for i in range(len(equal_daily))]
-    equal_peak = np.maximum.accumulate(equal_equity)
-    equal_dd = max(equal_peak - np.array(equal_equity))
+    equal_equity_curve = [args.capital + sum(equal_daily[:i+1]) for i in range(len(equal_daily))]
+    equal_peak = np.maximum.accumulate(equal_equity_curve)
+    equal_dd = max(equal_peak - np.array(equal_equity_curve))
     equal_sharpe = np.mean(equal_daily) / np.std(equal_daily) * math.sqrt(365) if np.std(equal_daily) > 0 else 0
 
-    # Step 3: Simulate ADAPTIVE allocation
+    # Step 3: Simulate ADAPTIVE supervisor
+    # Supervisor controls BASE allocation only. Compound assets reinvest PnL on top.
     print("  Phase 3: Simulating ADAPTIVE supervisor...")
-    allocations = {sym: base_alloc for sym in symbols}
+    allocations = {sym: base_alloc for sym in symbols}  # supervisor-controlled base
+    # Compound equity tracks cumulative PnL per asset (on top of base)
+    compound_pnl = {sym: 0.0 for sym in symbols}
     risk_adj = {sym: {"size_mult": 1.0, "spread_mult": 1.0, "max_pos_mult": 1.0, "max_loss_mult": 1.0} for sym in symbols}
     adaptive_daily = []
     alloc_history = {sym: [base_alloc] for sym in symbols}
     action_log = {sym: [] for sym in symbols}
 
     for day in range(max_days):
-        # Daily PnL based on current allocations AND risk multipliers
         day_total = 0.0
         for sym in symbols:
-            scale = allocations[sym] / 1000.0
-            # Risk impact: smaller size = less PnL (linear), wider spread = slightly less fill
-            # Net effect ≈ size_mult * (2 - spread_mult) to penalize wider spreads
+            # Effective capital = supervisor base + compound PnL (if compound asset)
+            if ASSETS[sym]["compound"]:
+                effective = allocations[sym] + compound_pnl[sym]
+            else:
+                effective = allocations[sym]
+            scale = effective / 1000.0
             risk_effect = risk_adj[sym]["size_mult"] * (2.0 - risk_adj[sym]["spread_mult"])
-            day_total += daily_pnls[sym][day] * scale * risk_effect
+            day_pnl = daily_pnls[sym][day] * scale * risk_effect
+            day_total += day_pnl
+            # Compound: accumulate PnL
+            if ASSETS[sym]["compound"]:
+                compound_pnl[sym] += day_pnl
         adaptive_daily.append(day_total)
 
-        # After scoring window, rebalance daily
+        # After scoring window, rebalance base allocations daily
         if day >= args.window:
-            # Compute scores for each bot using their window
             metrics = {}
             scores_dict = {}
             for sym in symbols:
                 window_pnl = []
                 for d in range(day - args.window + 1, day + 1):
-                    scale = allocations[sym] / 1000.0
+                    if ASSETS[sym]["compound"]:
+                        eff = allocations[sym] + compound_pnl[sym]
+                    else:
+                        eff = allocations[sym]
+                    scale = eff / 1000.0
                     r_eff = risk_adj[sym]["size_mult"] * (2.0 - risk_adj[sym]["spread_mult"])
                     window_pnl.append(daily_pnls[sym][d] * scale * r_eff)
                 metrics[sym] = compute_score(window_pnl)
 
-            # Absolute scoring
             metrics_list = [metrics[sym] for sym in symbols]
             scores_list = compute_scores_ranked(metrics_list)
             for i, sym in enumerate(symbols):
                 scores_dict[sym] = scores_list[i]
 
-            # Apply capital allocation rules
+            # Supervisor adjusts BASE allocation only (not compound equity)
             new_alloc = apply_allocation(
                 allocations, scores_dict, args.capital
             )
             allocations = new_alloc
 
-            # Apply risk adjustments (faster response than capital)
             risk_adj = compute_risk_adjustments(scores_dict, risk_adj)
 
         for sym in symbols:
@@ -407,27 +424,46 @@ def main():
     ad_monthly = adaptive_total / max_days * 30
     print(f"  {'Monthly (avg)':<30} {'$'+format(eq_monthly,',.0f'):>15} {'$'+format(ad_monthly,',.0f'):>15}")
 
-    # Per-asset final allocation
-    print(f"\n  FINAL CAPITAL ALLOCATION & RISK ADJUSTMENTS")
-    print(f"  {'-'*70}")
-    print(f"  {'Asset':<12} {'Capital':>10} {'%':>6} {'Change':>9}  {'Size':>5} {'Spread':>6} {'MaxPos':>6}")
-    print(f"  {'-'*70}")
+    # Per-asset final state
+    print(f"\n  FINAL STATE (base=supervisor, compound=accumulated PnL)")
+    print(f"  {'-'*80}")
+    print(f"  {'Asset':<12} {'Base':>10} {'Compound':>10} {'Effective':>10}  {'Size':>5} {'Spread':>6} {'Mode':>8}")
+    print(f"  {'-'*80}")
     for sym in symbols:
         final_alloc = alloc_history[sym][-1]
-        pct = final_alloc / args.capital * 100
-        change = final_alloc - base_alloc
+        cpnl = compound_pnl.get(sym, 0)
+        effective = final_alloc + cpnl if ASSETS[sym]["compound"] else final_alloc
         ra = risk_adj[sym]
-        print(f"  {sym:<12} ${final_alloc:>8,.0f} {pct:>5.1f}% {change:>+8,.0f}  {ra['size_mult']:>5.2f} {ra['spread_mult']:>6.2f} {ra['max_pos_mult']:>6.2f}")
+        mode = "COMPOUND" if ASSETS[sym]["compound"] else "FIXED"
+        print(f"  {sym:<12} ${final_alloc:>8,.0f} ${cpnl:>8,.0f} ${effective:>8,.0f}  {ra['size_mult']:>5.2f} {ra['spread_mult']:>6.2f} {mode:>8}")
 
-    # Per-asset PnL contribution
-    print(f"\n  PER-ASSET PnL (adaptive)")
-    print(f"  {'-'*50}")
+    # Per-asset PnL comparison (equal uses compound too for BTC/ETH)
+    print(f"\n  PER-ASSET PnL COMPARISON (equal includes compound for BTC/ETH)")
+    print(f"  {'-'*70}")
+    print(f"  {'Asset':<12} {'EQUAL':>12} {'ADAPTIVE':>12} {'Delta':>10} {'Mode':>10}")
+    print(f"  {'-'*70}")
+    total_eq_check = sum(equal_daily)
+    total_ad_check = sum(adaptive_daily)
+    # Reconstruct per-asset PnL from equity tracking
+    # For EQUAL: use eq_equity final - base
     for sym in symbols:
-        asset_pnl = sum(
-            daily_pnls[sym][d] * alloc_history[sym][d] / 1000.0
-            for d in range(max_days)
-        )
-        print(f"  {sym:<12} ${asset_pnl:>10,.0f}")
+        eq_pnl = eq_equity[sym] - base_alloc
+        if ASSETS[sym]["compound"]:
+            ad_pnl = compound_pnl[sym]
+        else:
+            ad_pnl_sum = 0
+            for d in range(max_days):
+                eff = allocations[sym]
+                scale = eff / 1000.0
+                r_eff = risk_adj[sym]["size_mult"] * (2.0 - risk_adj[sym]["spread_mult"])
+                ad_pnl_sum += daily_pnls[sym][d] * scale * r_eff
+            ad_pnl = ad_pnl_sum
+        delta = (ad_pnl - eq_pnl) / abs(eq_pnl) * 100 if eq_pnl != 0 else 0
+        mode = "COMPOUND" if ASSETS[sym]["compound"] else "FIXED"
+        print(f"  {sym:<12} ${eq_pnl:>10,.0f} ${ad_pnl:>10,.0f} {delta:>+9.1f}% {mode:>10}")
+    print(f"  {'-'*70}")
+    delta_total = (total_ad_check - total_eq_check) / abs(total_eq_check) * 100 if total_eq_check != 0 else 0
+    print(f"  {'TOTAL':<12} ${total_eq_check:>10,.0f} ${total_ad_check:>10,.0f} {delta_total:>+9.1f}%")
 
     print(f"\n{'=' * 70}")
 
