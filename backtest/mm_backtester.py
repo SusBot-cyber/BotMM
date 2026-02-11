@@ -89,6 +89,12 @@ class MMBacktestResult:
     avg_spread_captured_bps: float = 0.0
     avg_spread_quoted_bps: float = 0.0
 
+    # Directional bias stats
+    avg_bias: float = 0.0
+    bullish_pct: float = 0.0
+    bearish_pct: float = 0.0
+    neutral_pct: float = 0.0
+
     # Daily breakdown
     daily_pnls: list = field(default_factory=list)
 
@@ -113,6 +119,8 @@ class MMBacktester:
         max_daily_loss: float = 50.0,
         capital: float = 1000.0,
         atr_period: int = 14,
+        use_bias: bool = False,
+        bias_strength: float = 0.5,
     ):
         self.quote_params = quote_params or QuoteParams()
         self.maker_fee = maker_fee
@@ -121,6 +129,8 @@ class MMBacktester:
         self.max_daily_loss = max_daily_loss
         self.capital = capital
         self.atr_period = atr_period
+        self.use_bias = use_bias
+        self.bias_strength = bias_strength
 
     def run(self, candles: List[Candle], symbol: str = "BTCUSDT") -> MMBacktestResult:
         """Run MM backtest simulation on candle data."""
@@ -133,6 +143,15 @@ class MMBacktester:
 
         result = MMBacktestResult(symbol=symbol, days=0, candles=len(candles))
         trade_log: List[MMTradeLog] = []
+
+        # Directional bias
+        bias_obj = None
+        current_bias = 0.0
+        bias_samples: List[float] = []
+        regime_counts = {0: 0, 1: 0, -1: 0}  # NEUTRAL, BULLISH, BEARISH
+        if self.use_bias:
+            from bot_mm.core.signals import DirectionalBias
+            bias_obj = DirectionalBias(bias_strength=self.bias_strength)
 
         # Compute ATR
         atrs = self._compute_atr(candles)
@@ -152,6 +171,14 @@ class MMBacktester:
             atr = atrs[i]
             mid_price = (candle.high + candle.low) / 2.0
             volatility_pct = atr / mid_price if mid_price > 0 else 0.001
+
+            # Update directional bias with candle close
+            if bias_obj is not None:
+                bias_result = bias_obj.update(candle.close)
+                if bias_result is not None:
+                    current_bias = bias_result.bias
+                    bias_samples.append(current_bias)
+                    regime_counts[int(bias_result.regime)] += 1
 
             # Track daily boundaries
             day = candle.timestamp[:10]
@@ -182,6 +209,7 @@ class MMBacktester:
                 volatility_pct=volatility_pct,
                 inventory_usd=pos_usd,
                 max_position_usd=self.max_position_usd,
+                directional_bias=current_bias,
             )
 
             # Track quoted spread
@@ -279,6 +307,15 @@ class MMBacktester:
         result.fills_per_day = result.total_fills / max(result.days, 1)
         result.avg_spread_captured_bps = float(np.mean(spreads_captured)) if spreads_captured else 0
         result.avg_spread_quoted_bps = float(np.mean(spreads_quoted)) if spreads_quoted else 0
+
+        # Bias stats
+        if bias_samples:
+            result.avg_bias = float(np.mean(bias_samples))
+            total_regimes = sum(regime_counts.values())
+            if total_regimes > 0:
+                result.bullish_pct = regime_counts[1] / total_regimes * 100
+                result.bearish_pct = regime_counts[-1] / total_regimes * 100
+                result.neutral_pct = regime_counts[0] / total_regimes * 100
 
         return result
 
@@ -412,6 +449,15 @@ def print_results(result: MMBacktestResult, params: QuoteParams):
     print(f"  {'Avg spread quoted (bps)':<30} {result.avg_spread_quoted_bps:>15.2f}")
     print(f"  {'Avg spread captured (bps)':<30} {result.avg_spread_captured_bps:>15.2f}")
 
+    if result.avg_bias != 0.0 or result.bullish_pct != 0.0:
+        print()
+        print(f"  {'Directional Bias':<30}")
+        print(f"  {'-'*45}")
+        print(f"  {'Avg bias':<30} {result.avg_bias:>+15.4f}")
+        print(f"  {'Bullish %':<30} {result.bullish_pct:>14.1f}%")
+        print(f"  {'Bearish %':<30} {result.bearish_pct:>14.1f}%")
+        print(f"  {'Neutral %':<30} {result.neutral_pct:>14.1f}%")
+
     if result.days > 0:
         daily_avg = result.net_pnl / result.days
         monthly = daily_avg * 30
@@ -453,6 +499,8 @@ def main():
     parser.add_argument("--taker-fee", type=float, default=0.00045, help="Taker fee")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--data-dir", default=None, help="Data cache directory")
+    parser.add_argument("--bias", action="store_true", help="Enable directional bias (Kalman+QQE)")
+    parser.add_argument("--bias-strength", type=float, default=0.5, help="Bias strength 0-1")
     args = parser.parse_args()
 
     np.random.seed(args.seed)
@@ -495,6 +543,8 @@ def main():
         taker_fee=args.taker_fee,
         max_position_usd=args.max_pos,
         capital=args.capital,
+        use_bias=args.bias,
+        bias_strength=args.bias_strength,
     )
 
     result = bt.run(candles, args.symbol)

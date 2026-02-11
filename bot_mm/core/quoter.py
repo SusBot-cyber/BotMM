@@ -37,6 +37,7 @@ class QuoteEngine:
         inventory_usd: float,
         max_position_usd: float,
         book_imbalance: float = 0.0,
+        directional_bias: float = 0.0,
     ) -> List[Quote]:
         """
         Calculate bid and ask quotes.
@@ -47,10 +48,15 @@ class QuoteEngine:
             inventory_usd: Current inventory in USD (+ = long)
             max_position_usd: Maximum allowed position
             book_imbalance: -1 to +1 (positive = buy pressure)
+            directional_bias: -1 to +1 from DirectionalBias (positive = bullish)
 
         Returns:
             List of Quote objects (bids + asks)
         """
+        # Directional bias shifts the effective mid price
+        bias_shift = directional_bias * volatility_pct * 0.5
+        effective_mid = mid_price * (1 + bias_shift)
+
         spread_bps = self._calc_spread(volatility_pct, inventory_usd, max_position_usd)
         skew_bps = self._calc_skew(inventory_usd, max_position_usd, volatility_pct)
 
@@ -65,12 +71,11 @@ class QuoteEngine:
         for level in range(self.params.num_levels):
             level_offset = level * self.params.level_spacing_bps / 10000.0
 
-            bid_price = mid_price * (1 - spread_pct / 2 - skew_pct - level_offset + imb_pct)
-            ask_price = mid_price * (1 + spread_pct / 2 - skew_pct + level_offset + imb_pct)
+            bid_price = effective_mid * (1 - spread_pct / 2 - skew_pct - level_offset + imb_pct)
+            ask_price = effective_mid * (1 + spread_pct / 2 - skew_pct + level_offset + imb_pct)
 
-            # Size decreases with level
-            level_weights = [0.5, 0.3, 0.2] if self.params.num_levels == 3 else [1.0]
-            weight = level_weights[level] if level < len(level_weights) else 0.2
+            # Size decreases with level — dynamic weights for 1-5 levels
+            weight = self._level_weight(level)
             size_usd = self.params.order_size_usd * weight
 
             size = size_usd / mid_price
@@ -79,6 +84,22 @@ class QuoteEngine:
             quotes.append(Quote(price=ask_price, size=size, side="sell", level=level))
 
         return quotes
+
+    # Base weights for up to 5 levels (50%, 30%, 15%, 5%, ...)
+    _BASE_WEIGHTS = [0.50, 0.30, 0.15, 0.05]
+
+    def _level_weight(self, level: int) -> float:
+        """Return normalized weight for a given level index."""
+        n = self.params.num_levels
+        # Build raw weights for N levels
+        raw = []
+        for i in range(n):
+            if i < len(self._BASE_WEIGHTS):
+                raw.append(self._BASE_WEIGHTS[i])
+            else:
+                raw.append(self._BASE_WEIGHTS[-1])
+        total = sum(raw)
+        return raw[level] / total if total > 0 else 1.0 / n
 
     def _calc_spread(
         self, volatility_pct: float, inventory_usd: float, max_position_usd: float

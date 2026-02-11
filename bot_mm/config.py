@@ -49,6 +49,19 @@ class RiskLimits:
 
 
 @dataclass
+class DirectionalBiasParams:
+    """Kalman+QQE directional bias for quote skewing."""
+    enabled: bool = False
+    kalman_process_noise: float = 0.005
+    kalman_measurement_noise: float = 0.1
+    qqe_rsi_period: int = 14
+    qqe_smoothing: int = 5
+    qqe_factor: float = 3.5
+    slope_window: int = 5
+    bias_strength: float = 0.5  # 0-1, how much bias affects quotes
+
+
+@dataclass
 class AssetMMConfig:
     """Configuration for a single MM asset."""
     symbol: str
@@ -67,6 +80,9 @@ class AssetMMConfig:
 
     # Risk
     risk: RiskLimits = field(default_factory=RiskLimits)
+
+    # Directional bias
+    bias: DirectionalBiasParams = field(default_factory=DirectionalBiasParams)
 
 
 @dataclass
@@ -135,6 +151,16 @@ class MMBotConfig:
                 taker_fee=taker,
                 quote=quote,
                 risk=risk,
+                bias=DirectionalBiasParams(
+                    enabled=os.getenv(f"{prefix}_BIAS_ENABLED", "false").lower() == "true",
+                    kalman_process_noise=gf("BIAS_KALMAN_PROCESS_NOISE", 0.005),
+                    kalman_measurement_noise=gf("BIAS_KALMAN_MEASUREMENT_NOISE", 0.1),
+                    qqe_rsi_period=int(gf("BIAS_QQE_RSI_PERIOD", 14)),
+                    qqe_smoothing=int(gf("BIAS_QQE_SMOOTHING", 5)),
+                    qqe_factor=gf("BIAS_QQE_FACTOR", 3.5),
+                    slope_window=int(gf("BIAS_SLOPE_WINDOW", 5)),
+                    bias_strength=gf("BIAS_STRENGTH", 0.5),
+                ),
             )
 
         return config

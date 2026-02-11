@@ -132,7 +132,7 @@ def test_multi_level_spacing():
 
 
 def test_multi_level_sizes():
-    """3-level weights: 50%, 30%, 20% of order_size_usd."""
+    """3-level weights: normalized from [50%, 30%, 15%] base weights."""
     _, engine = make_engine(num_levels=3, order_size_usd=100.0)
     mid = 50_000.0
     quotes = engine.calculate_quotes(mid, 0.005, 0.0, 500.0)
@@ -142,9 +142,10 @@ def test_multi_level_sizes():
     size_usd_1 = bids[1].size * mid
     size_usd_2 = bids[2].size * mid
 
-    assert size_usd_0 == pytest.approx(50.0, rel=0.01)
-    assert size_usd_1 == pytest.approx(30.0, rel=0.01)
-    assert size_usd_2 == pytest.approx(20.0, rel=0.01)
+    # Normalized weights: 0.50/0.95, 0.30/0.95, 0.15/0.95
+    assert size_usd_0 == pytest.approx(100.0 * 0.50 / 0.95, rel=0.01)
+    assert size_usd_1 == pytest.approx(100.0 * 0.30 / 0.95, rel=0.01)
+    assert size_usd_2 == pytest.approx(100.0 * 0.15 / 0.95, rel=0.01)
 
 
 # ── Edge cases ──────────────────────────────────────────────

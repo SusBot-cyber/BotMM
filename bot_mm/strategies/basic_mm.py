@@ -75,6 +75,22 @@ class BasicMMStrategy:
         self._iteration = 0
         self._start_time: float = 0.0
 
+        # Directional bias (Kalman+QQE)
+        self._bias = None
+        self._current_bias: float = 0.0
+        self._last_hour: Optional[int] = None
+        if config.bias.enabled:
+            from bot_mm.core.signals import DirectionalBias
+            self._bias = DirectionalBias(
+                kalman_process_noise=config.bias.kalman_process_noise,
+                kalman_measurement_noise=config.bias.kalman_measurement_noise,
+                qqe_rsi_period=config.bias.qqe_rsi_period,
+                qqe_smoothing=config.bias.qqe_smoothing,
+                qqe_factor=config.bias.qqe_factor,
+                slope_window=config.bias.slope_window,
+                bias_strength=config.bias.bias_strength,
+            )
+
     async def start(self):
         """Main loop — runs until stop() is called."""
         self._running = True
@@ -157,6 +173,16 @@ class BasicMMStrategy:
         # 6. Update baseline volatility
         self.risk.update_normal_vol(self._volatility_pct)
 
+        # 6b. Update directional bias on hourly boundary
+        if self._bias is not None:
+            import datetime
+            current_hour = datetime.datetime.utcnow().hour
+            if self._last_hour is not None and current_hour != self._last_hour:
+                result = self._bias.update(mid_price)
+                if result is not None:
+                    self._current_bias = result.bias
+            self._last_hour = current_hour
+
         # 7. Generate quotes
         inventory_usd = self.inventory.state.position_size * mid_price
         quotes = self.quoter.calculate_quotes(
@@ -164,6 +190,7 @@ class BasicMMStrategy:
             volatility_pct=self._volatility_pct,
             inventory_usd=inventory_usd,
             max_position_usd=self.config.risk.max_position_usd,
+            directional_bias=self._current_bias,
         )
 
         # 8. Filter out sides that should be paused
@@ -254,14 +281,19 @@ class BasicMMStrategy:
     def _log_status(self, mid_price: float):
         """Log periodic status update."""
         uptime = time.time() - self._start_time
+        bias_str = ""
+        if self._bias is not None:
+            r = self._bias.last_result
+            regime = r.regime.name if r else "WARMUP"
+            bias_str = f" | bias={self._current_bias:+.3f} ({regime})"
         logger.info(
             "STATUS %s | mid=%.2f | vol=%.4f%% | pos=%.6f ($%.2f) | "
-            "pnl=$%.2f (realized=$%.2f) | %s | uptime=%.0fs",
+            "pnl=$%.2f (realized=$%.2f) | %s%s | uptime=%.0fs",
             self.symbol, mid_price, self._volatility_pct * 100,
             self.inventory.state.position_size,
             abs(self.inventory.state.position_size * mid_price),
             self.inventory.total_pnl, self.inventory.net_pnl,
-            self.order_mgr.stats_str, uptime,
+            self.order_mgr.stats_str, bias_str, uptime,
         )
 
     def _log_summary(self):
