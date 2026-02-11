@@ -9,6 +9,7 @@ Usage:
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import signal
@@ -80,6 +81,18 @@ def load_config(args: argparse.Namespace) -> tuple:
 
     # Ensure all symbols exist in config
     asset_configs: List[AssetMMConfig] = []
+
+    # Load optimized params from daily reoptimizer (if available)
+    live_params_file = Path(__file__).parent.parent / "data" / "live_params.json"
+    live_params = {}
+    if live_params_file.exists():
+        try:
+            with open(live_params_file) as f:
+                live_params = json.load(f)
+            logger.info("Loaded optimized params from %s", live_params_file)
+        except Exception:
+            logger.warning("Failed to load live_params.json, using defaults")
+
     for sym in symbols:
         if sym not in config.assets:
             config.assets[sym] = AssetMMConfig(symbol=sym)
@@ -93,6 +106,21 @@ def load_config(args: argparse.Namespace) -> tuple:
                 asset_cfg.quote.base_spread_bps = args.spread
             if args.size is not None:
                 asset_cfg.quote.order_size_usd = args.size
+
+        # Apply daily-reoptimized params (lower priority than CLI)
+        if sym in live_params and not (args.spread or args.size):
+            lp = live_params[sym]
+            if "base_spread_bps" in lp:
+                asset_cfg.quote.base_spread_bps = lp["base_spread_bps"]
+            if "inventory_skew_factor" in lp:
+                asset_cfg.quote.inventory_skew_factor = lp["inventory_skew_factor"]
+            if "order_size_usd" in lp:
+                asset_cfg.quote.order_size_usd = lp["order_size_usd"]
+            if "num_levels" in lp:
+                asset_cfg.quote.num_levels = lp["num_levels"]
+            if "vol_multiplier" in lp:
+                asset_cfg.quote.vol_multiplier = lp["vol_multiplier"]
+            logger.info("  %s: applied optimized params: %s", sym, lp)
 
         asset_configs.append(asset_cfg)
 

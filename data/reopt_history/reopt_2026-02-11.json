@@ -1,0 +1,226 @@
+[
+  {
+    "symbol": "BTCUSDT",
+    "timestamp": "2026-02-11T15:56:48.408740+00:00",
+    "old_params": {
+      "base_spread_bps": 2.0,
+      "inventory_skew_factor": 0.3,
+      "order_size_usd": 150,
+      "num_levels": 2
+    },
+    "new_params": {
+      "base_spread_bps": 1.0,
+      "vol_multiplier": 1.0,
+      "inventory_skew_factor": 0.5,
+      "order_size_usd": 150,
+      "num_levels": 2
+    },
+    "old_score": 415.61,
+    "new_score": 579.26,
+    "improvement_pct": 39.4,
+    "applied": false,
+    "reason": "drift too high (67%): base_spread_bps: 2.0\u21921.0 (50%); inventory_skew_factor: 0.3\u21920.5 (67%)",
+    "details": {
+      "net_pnl": 241.68,
+      "sharpe": 16.09,
+      "fills": 3751,
+      "max_dd": 7.07
+    }
+  },
+  {
+    "symbol": "BTCUSDT",
+    "timestamp": "2026-02-11T16:02:31.781754+00:00",
+    "old_params": {
+      "base_spread_bps": 2.0,
+      "inventory_skew_factor": 0.3,
+      "order_size_usd": 150,
+      "num_levels": 2
+    },
+    "new_params": {
+      "base_spread_bps": 2.0,
+      "vol_multiplier": 1.5,
+      "inventory_skew_factor": 0.3,
+      "order_size_usd": 150,
+      "num_levels": 2
+    },
+    "old_score": 349.0,
+    "new_score": 714.79,
+    "improvement_pct": 104.8,
+    "applied": false,
+    "reason": "dry run",
+    "details": {
+      "net_pnl": 275.28,
+      "sharpe": 17.46,
+      "fills": 3883,
+      "max_dd": 8.36
+    }
+  },
+  {
+    "symbol": "BTCUSDT",
+    "timestamp": "2026-02-11T16:02:40.002128+00:00",
+    "old_params": {
+      "base_spread_bps": 2.0,
+      "inventory_skew_factor": 0.3,
+      "order_size_usd": 150,
+      "num_levels": 2
+    },
+    "new_params": {
+      "base_spread_bps": 1.5,
+      "vol_multiplier": 2.0,
+      "inventory_skew_factor": 0.8,
+      "order_size_usd": 150,
+      "num_levels": 2
+    },
+    "old_score": 389.72,
+    "new_score": 628.26,
+    "improvement_pct": 61.2,
+    "applied": false,
+    "reason": "drift too high (167%): base_spread_bps: 2.0\u21921.5 (25%); inventory_skew_factor: 0.3\u21920.8 (167%)",
+    "details": {
+      "net_pnl": 227.99,
+      "sharpe": 18.45,
+      "fills": 3716,
+      "max_dd": 4.34
+    }
+  },
+  {
+    "symbol": "BTCUSDT",
+    "timestamp": "2026-02-11T16:02:55.091925+00:00",
+    "old_params": {
+      "base_spread_bps": 2.0,
+      "inventory_skew_factor": 0.3,
+      "order_size_usd": 150,
+      "num_levels": 2
+    },
+    "new_params": {
+      "base_spread_bps": 2.0,
+      "vol_multiplier": 2.0,
+      "inventory_skew_factor": 0.3,
+      "order_size_usd": 150,
+      "num_levels": 2
+    },
+    "old_score": 510.32,
+    "new_score": 698.13,
+    "improvement_pct": 36.8,
+    "applied": false,
+    "reason": "dry run",
+    "details": {
+      "net_pnl": 324.47,
+      "sharpe": 14.43,
+      "fills": 3815,
+      "max_dd": 6.06
+    }
+  },
+  {
+    "symbol": "ETHUSDT",
+    "timestamp": "2026-02-11T16:02:55.091925+00:00",
+    "old_params": {
+      "base_spread_bps": 1.5,
+      "inventory_skew_factor": 0.3,
+      "order_size_usd": 150,
+      "num_levels": 2
+    },
+    "new_params": {
+      "base_spread_bps": 1.5,
+      "vol_multiplier": 2.0,
+      "inventory_skew_factor": 0.5,
+      "order_size_usd": 150,
+      "num_levels": 2
+    },
+    "old_score": 278.4,
+    "new_score": 643.24,
+    "improvement_pct": 131.0,
+    "applied": false,
+    "reason": "dry run",
+    "details": {
+      "net_pnl": 281.74,
+      "sharpe": 15.41,
+      "fills": 4462,
+      "max_dd": 12.09
+    }
+  },
+  {
+    "symbol": "SOLUSDT",
+    "timestamp": "2026-02-11T16:02:55.091925+00:00",
+    "old_params": {
+      "base_spread_bps": 1.5,
+      "inventory_skew_factor": 0.5,
+      "order_size_usd": 150,
+      "num_levels": 2
+    },
+    "new_params": {
+      "base_spread_bps": 3.0,
+      "vol_multiplier": 2.0,
+      "inventory_skew_factor": 0.5,
+      "order_size_usd": 150,
+      "num_levels": 2
+    },
+    "old_score": 452.69,
+    "new_score": 666.01,
+    "improvement_pct": 47.1,
+    "applied": false,
+    "reason": "dry run",
+    "details": {
+      "net_pnl": 330.52,
+      "sharpe": 13.68,
+      "fills": 4683,
+      "max_dd": 18.26
+    }
+  },
+  {
+    "symbol": "XRPUSDT",
+    "timestamp": "2026-02-11T16:02:55.091925+00:00",
+    "old_params": {
+      "base_spread_bps": 1.5,
+      "inventory_skew_factor": 0.5,
+      "order_size_usd": 150,
+      "num_levels": 2
+    },
+    "new_params": {
+      "base_spread_bps": 2.0,
+      "vol_multiplier": 1.0,
+      "inventory_skew_factor": 0.3,
+      "order_size_usd": 150,
+      "num_levels": 2
+    },
+    "old_score": 275.51,
+    "new_score": 806.99,
+    "improvement_pct": 192.9,
+    "applied": false,
+    "reason": "dry run",
+    "details": {
+      "net_pnl": 371.5,
+      "sharpe": 14.71,
+      "fills": 4597,
+      "max_dd": 15.51
+    }
+  },
+  {
+    "symbol": "HYPEUSDT",
+    "timestamp": "2026-02-11T16:02:55.091925+00:00",
+    "old_params": {
+      "base_spread_bps": 1.5,
+      "inventory_skew_factor": 0.3,
+      "order_size_usd": 100,
+      "num_levels": 2
+    },
+    "new_params": {
+      "base_spread_bps": 3.0,
+      "vol_multiplier": 1.0,
+      "inventory_skew_factor": 0.5,
+      "order_size_usd": 150,
+      "num_levels": 2
+    },
+    "old_score": 528.4,
+    "new_score": 731.3,
+    "improvement_pct": 38.4,
+    "applied": false,
+    "reason": "dry run",
+    "details": {
+      "net_pnl": 346.86,
+      "sharpe": 14.28,
+      "fills": 5051,
+      "max_dd": 15.79
+    }
+  }
+]
