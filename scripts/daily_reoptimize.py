@@ -107,17 +107,7 @@ ASSET_PROFILES = {
             "num_levels": 2,
         },
     },
-    "HYPEUSDT": {
-        "compound": False,
-        "use_bias": False,
-        "bias_strength": 0.0,
-        "base_params": {
-            "base_spread_bps": 1.5,
-            "inventory_skew_factor": 0.3,
-            "order_size_usd": 100,
-            "num_levels": 2,
-        },
-    },
+    # "HYPEUSDT" removed: poor performance (Sharpe too low, capital better allocated elsewhere)
 }
 
 # Optimizer search grid (focused — nearby current optimals)

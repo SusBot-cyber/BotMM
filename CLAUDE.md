@@ -137,7 +137,7 @@ tests/                          # 343 tests across 16 test files
 | XRP | $11,033 | 12.5 | 83% | 365d |
 | BTC | $10,536 | 17.5 | 90% | 365d |
 | SOL | $9,253 | 10.8 | 78% | 365d |
-| HYPE | $5,774 | 9.1 | 73% | 225d |
+| ~~HYPE~~ | ~~$5,774~~ | ~~9.1~~ | ~~73%~~ | ~~225d~~ | *removed* |
 
 ### Portfolio ($50K, 5 assets, 225d, supervisor + compound)
 
@@ -155,7 +155,7 @@ tests/                          # 343 tests across 16 test files
 | ETH | 1.5 | 0.3 | 0.2 | 150 | $1,269 | ON |
 | SOL | 1.5 | 0.5 | OFF | 150 | $1,197 | OFF |
 | XRP | 1.5 | 0.5 | 0.2 | 150 | $1,228 | OFF |
-| HYPE | 1.5 | 0.3 | OFF | 100 | $552 | OFF |
+| ~~HYPE~~ | — | — | — | — | — | *removed: poor performance* |
 
 ## Key Parameters
 
@@ -244,7 +244,7 @@ score = 0.40 * sharpe_norm + 0.30 * return_norm + 0.20 * (1-dd_norm) + 0.10 * co
 
 ### Compound + Supervisor Integration
 - **BTC/ETH:** compound ON — reinvest PnL, supervisor controls BASE allocation only
-- **SOL/XRP/HYPE:** compound OFF — supervisor controls full capital + risk
+- **SOL/XRP:** compound OFF — supervisor controls full capital + risk
 - Result: $50K → $100K in 225d (+21.6% vs equal allocation)
 
 ## Live Infrastructure

@@ -35,7 +35,7 @@ ASSETS = {
     "ETHUSDT": {"spread": 1.5, "skew": 0.3, "size": 150, "bias": True, "bias_str": 0.2, "compound": True},
     "SOLUSDT": {"spread": 1.5, "skew": 0.5, "size": 150, "bias": False, "bias_str": 0.0, "compound": False},
     "XRPUSDT": {"spread": 1.5, "skew": 0.5, "size": 150, "bias": True, "bias_str": 0.2, "compound": False},
-    "HYPEUSDT": {"spread": 1.5, "skew": 0.3, "size": 100, "bias": False, "bias_str": 0.0, "compound": False},
+    # "HYPEUSDT": {"spread": 1.5, "skew": 0.3, "size": 100, "bias": False, "bias_str": 0.0, "compound": False},  # removed: poor performance
 }
 
 

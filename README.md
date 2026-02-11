@@ -18,15 +18,13 @@ Places bid and ask orders around the mid price to capture the bid-ask spread. Ea
 | XRP | $11,033 | 12.5 | 83% | 365d |
 | BTC | $10,536 | 17.5 | 90% | 365d |
 | SOL | $9,253 | 10.8 | 78% | 365d |
-| HYPE | $5,774 | 9.1 | 73% | 225d |
 
-### Portfolio ($50K, 5 assets, 225 days)
+### Portfolio ($50K, 4 assets, 225 days)
 
 | Strategy | Net PnL | Return | Sharpe |
 |----------|---------|--------|--------|
-| Equal weight | $33,913 | 67.8% | 24.2 |
-| + Compound (BTC/ETH) | $41,084 | 82.2% | 23.3 |
-| **+ Supervisor** | **$49,979** | **100.0%** | **22.4** |
+| Equal weight | $42,301 | 84.6% | 22.5 |
+| **+ Supervisor + Compound** | **$51,423** | **102.8%** | **20.8** |
 
 ## Features
 

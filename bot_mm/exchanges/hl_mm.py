@@ -24,7 +24,7 @@ SYMBOL_MAP = {
     "ETHUSDT": "ETH",
     "SOLUSDT": "SOL",
     "XRPUSDT": "XRP",
-    "HYPEUSDT": "HYPE",
+    # "HYPEUSDT": "HYPE",  # removed: poor MM performance
 }
 
 # Max significant figures for HL prices (perps)
