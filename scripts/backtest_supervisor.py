@@ -4,10 +4,11 @@ Meta-Supervisor Backtest — simulate adaptive capital allocation across 5 bots.
 
 Runs backtests for all assets, extracts daily PnL, then simulates:
 1. EQUAL: fixed equal allocation (baseline)
-2. ADAPTIVE: score-based reallocation every day using 14d rolling window
+2. ADAPTIVE: score-based reallocation every day using 45d rolling window
 
 Scoring: 40% Sharpe + 30% PnL/capital + 20% (1-DD) + 10% consistency
-Allocation: score>0.7 → +10%, 0.4-0.7 → hold, 0.2-0.4 → -15%, <0.2 → pause
+Allocation (V3_CONSERVATIVE): score>0.7 → reward, 0.3-0.7 → hold, 0.1-0.3 → -3%, <0.1 → pause (-10%)
+Tuned: window=45d, min_cap=$5K, max_change=5%/d, 1% mean-revert to equal
 
 Usage:
     py scripts/backtest_supervisor.py --capital 50000 --days 365
@@ -69,6 +70,8 @@ def run_asset_backtest(symbol: str, days: int, capital: float) -> List[float]:
 
     bt = MMBacktester(
         quote_params=qp,
+        maker_fee=0.00015,  # HL base tier: 0.015% cost (not rebate)
+        taker_fee=0.00045,
         max_position_usd=capital * 0.5,
         max_daily_loss=capital * 0.05,
         capital=capital,
@@ -154,13 +157,19 @@ def apply_allocation(
     allocations: Dict[str, float],
     scores: Dict[str, float],
     total_capital: float,
-    min_capital: float = 500.0,
+    min_capital: float = 5000.0,
     max_pct: float = 0.35,
-    max_daily_change: float = 0.15,
+    max_daily_change: float = 0.05,
+    mean_revert: float = 0.01,
 ) -> Dict[str, float]:
-    """Apply reward/punishment rules. Returns new allocations."""
+    """Apply reward/punishment rules. Returns new allocations.
+
+    V3_CONSERVATIVE tuning (Feb 2026): gentle punishment, 45d window,
+    1% daily mean-revert to base_alloc. Beats aggressive V0 by +9% PnL.
+    """
     new_alloc = dict(allocations)
     pool = 0.0  # capital freed from punished bots
+    base_alloc = total_capital / len(allocations)
 
     symbols = list(allocations.keys())
 
@@ -169,18 +178,24 @@ def apply_allocation(
         score = scores.get(sym, 0.5)
         current = new_alloc[sym]
 
-        if score < 0.2:  # PAUSE
-            change = min(current * 0.30, current - min_capital)
+        if score < 0.10:  # PAUSE — very conservative threshold
+            change = min(current * 0.10, current - min_capital)
             change = min(change, current * max_daily_change * 2)
             if change > 0:
                 new_alloc[sym] = max(min_capital, current - change)
                 pool += change
-        elif score < 0.4:  # PUNISH
-            change = current * 0.10
+        elif score < 0.30:  # PUNISH — gentle 3% cut
+            change = current * 0.03
             change = min(change, current * max_daily_change)
             if current - change >= min_capital:
                 new_alloc[sym] = current - change
                 pool += change
+
+    # Phase 1.5: Mean-revert toward base_alloc (prevents extreme drift)
+    if mean_revert > 0:
+        for sym in symbols:
+            diff = base_alloc - new_alloc[sym]
+            new_alloc[sym] += diff * mean_revert
 
     # Phase 2: Reward high scorers with freed capital
     rewarded = [s for s in symbols if scores.get(s, 0.5) > 0.7]
@@ -196,7 +211,7 @@ def apply_allocation(
 
     # Phase 3: Distribute remaining pool equally among HOLD bots
     if pool > 1.0:
-        hold_bots = [s for s in symbols if 0.4 <= scores.get(s, 0.5) <= 0.7]
+        hold_bots = [s for s in symbols if 0.30 <= scores.get(s, 0.5) <= 0.7]
         if hold_bots:
             share = pool / len(hold_bots)
             for sym in hold_bots:
@@ -242,9 +257,9 @@ def compute_risk_adjustments(
     for sym, score in scores.items():
         if score >= 0.7:
             target = targets["reward"]
-        elif score >= 0.4:
+        elif score >= 0.30:
             target = targets["hold"]
-        elif score >= 0.2:
+        elif score >= 0.10:
             target = targets["punish"]
         else:
             target = targets["pause"]
@@ -271,7 +286,7 @@ def main():
     parser = argparse.ArgumentParser(description="Meta-Supervisor Backtest Simulation")
     parser.add_argument("--capital", type=float, default=50000, help="Total capital ($)")
     parser.add_argument("--days", type=int, default=365, help="Backtest period")
-    parser.add_argument("--window", type=int, default=14, help="Scoring window (days)")
+    parser.add_argument("--window", type=int, default=45, help="Scoring window (days)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args()
 

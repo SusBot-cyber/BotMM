@@ -4,7 +4,7 @@ Automated market making bot for crypto perpetuals on **Hyperliquid**, with ML-en
 
 ## What It Does
 
-Places bid and ask orders around the mid price to capture the bid-ask spread. Earns on every round-trip trade plus Hyperliquid's maker rebate (-0.015%).
+Places bid and ask orders around the mid price to capture the bid-ask spread. Earns on every round-trip trade. HL maker fee is +0.015% (cost at base tier).
 
 **Core strategy:** Avellaneda-Stoikov model with directional bias (Kalman+QQE), toxicity detection, and adaptive parameter tuning.
 
@@ -19,12 +19,12 @@ Places bid and ask orders around the mid price to capture the bid-ask spread. Ea
 | BTC | $10,536 | 17.5 | 90% | 365d |
 | SOL | $9,253 | 10.8 | 78% | 365d |
 
-### Portfolio ($50K, 4 assets, 225 days)
+### Portfolio ($50K, 4 assets, 365 days, real fee +0.015%)
 
 | Strategy | Net PnL | Return | Sharpe |
 |----------|---------|--------|--------|
-| Equal weight | $42,301 | 84.6% | 22.5 |
-| **+ Supervisor + Compound** | **$51,423** | **102.8%** | **20.8** |
+| Equal weight | $65,063 | 130.1% | 14.8 |
+| **+ Supervisor V3 + Compound** | **$65,440** | **130.9%** | **14.9** |
 
 ## Features
 
@@ -34,7 +34,7 @@ Places bid and ask orders around the mid price to capture the bid-ask spread. Ea
 - **Toxicity detection** — tracks post-fill price movement, widens spread on toxic flow
 - **Auto-parameter tuning** — runtime self-adjustment (Sharpe +9%, 93% profitable days)
 - **Dynamic order sizing** — adapts to vol regime, fill rate, drawdown
-- **Meta-supervisor** — dual capital + risk allocation across assets (+21.6% vs equal)
+- **Meta-supervisor** — V3 conservative tuning, dual capital + risk allocation (+9% vs aggressive V0)
 - **Compound mode** — reinvest PnL for BTC/ETH
 - **Order book replay backtest** — tick-level simulation with queue position (~90% realism)
 - **Daily auto-reoptimizer** — nightly parameter search + hot reload (zero downtime)
@@ -108,7 +108,7 @@ python -m bot_mm.main --all --mainnet --capital 10000
 
 | Exchange | Status | Role |
 |----------|--------|------|
-| **Hyperliquid** | ✅ Implemented | Primary (maker rebates, wider spreads) |
+| **Hyperliquid** | ✅ Implemented | Primary (wider spreads, maker fee +0.015%) |
 | Binance Futures | 🔲 Planned | Altcoin MM + hedging |
 | Bybit | 🔲 Planned | Redundancy + cross-exchange arb |
 

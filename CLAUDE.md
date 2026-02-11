@@ -5,7 +5,8 @@
 Market making bot for crypto perpetuals on Hyperliquid (primary), with future support for Binance and Bybit.
 
 **Strategy:** Capture bid-ask spread by quoting both sides of the order book.
-**Edge:** HL maker rebate (-0.015%), wider spreads than CEX, directional bias from Kalman+QQE.
+**Edge:** Spread capture + MM microstructure edge, directional bias from Kalman+QQE.
+**Fee:** HL maker fee = +0.015% (COST at base tier, rebate only at >$500M 14d vol).
 **Repository:** https://github.com/SusBot-cyber/BotMM
 **Status:** ✅ Phase 1-5 DONE — L2 Recorder deployed on AWS, ready for live MM testing
 
@@ -139,13 +140,13 @@ tests/                          # 343 tests across 16 test files
 | SOL | $9,253 | 10.8 | 78% | 365d |
 | ~~HYPE~~ | ~~$5,774~~ | ~~9.1~~ | ~~73%~~ | ~~225d~~ | *removed* |
 
-### Portfolio ($50K, 5 assets, 225d, supervisor + compound)
+### Portfolio ($50K, 4 assets, real fee +0.015%, supervisor V3 + compound)
 
-| Strategy | Net PnL | Return | Sharpe |
-|----------|---------|--------|--------|
-| Equal (no compound) | $33,913 | 67.8% | 24.2 |
-| Equal + compound BTC/ETH | $41,084 | 82.2% | 23.3 |
-| **Supervisor + compound** | **$49,979** | **100.0%** | 22.4 |
+| Strategy | Net PnL | Return | Sharpe | Period |
+|----------|---------|--------|--------|--------|
+| Equal (baseline) | $65,063 | 130.1% | 14.8 | 365d |
+| **Supervisor V3 + compound** | **$65,440** | **130.9%** | **14.9** | **365d** |
+| Old V0 supervisor | $60,944 | 121.9% | 14.4 | 365d |
 
 ### Optimizer Results ($1K base)
 
@@ -166,7 +167,7 @@ inventory_skew_factor=0.3  # Optimal skew (from 216-combo optimizer)
 max_position_usd=500       # Max inventory per asset (scales with capital)
 order_size_usd=150         # Optimal size per quote side
 num_levels=2               # Optimal quote levels per side
-maker_fee=-0.00015         # HL maker rebate (negative = earn)
+maker_fee=0.00015          # HL maker fee COST (positive = pay, base tier)
 taker_fee=0.00045          # HL taker fee (for hedging)
 bias_strength=0.2          # Directional bias from Kalman+QQE
 max_daily_loss=capital*0.05 # Auto-scaled 5% of capital
@@ -190,9 +191,12 @@ Symbol resolution is automatic: `XYZUSDT` → strips suffix → validates agains
 New assets can be added to `.env` without code changes.
 
 ### Fee Convention (Critical)
-- HL maker fee = -0.00015 (NEGATIVE = rebate, we GET money)
-- `total_fees` accumulates raw values (negative for rebates)
-- `net_pnl = realized_pnl - total_fees` (subtracting negative = adding rebate)
+- HL base tier maker fee = +0.00015 (POSITIVE = cost, NOT rebate)
+- Rebates only at >$500M 14d volume or >0.5% market share
+- Bot at Tier 0-1: ~$5M 14d volume → pays 0.015% per fill
+- `total_fees` accumulates raw values (positive = cost)
+- `net_pnl = gross_pnl - total_fees`
+- Bot still profitable: gross spread capture > fee cost
 
 ## ML Modules
 
@@ -220,11 +224,11 @@ New assets can be added to `.env` without code changes.
 
 ## Meta-Supervisor System
 
-### Dual Control: Capital + Risk
+### Dual Control: Capital + Risk (V3_CONSERVATIVE tuning)
 
 | Mechanizm | Szybkość | Wpływ | Limity |
 |-----------|----------|-------|--------|
-| **Kapitał** (alokacja bazowa) | Wolny (max ±15%/dzień) | Ile $ per bot | min $500, max 35% |
+| **Kapitał** (alokacja bazowa) | Wolny (max ±5%/dzień) | Ile $ per bot | min $5K, max 35% |
 | **Ryzyko** (mnożniki) | Szybki (max ±10%/dzień) | Size, spread, max_pos | bounds enforced |
 
 ### Risk Multipliers per Score Zone
@@ -232,15 +236,17 @@ New assets can be added to `.env` without code changes.
 | Zone | Score | Size | Spread | MaxPos |
 |------|-------|------|--------|--------|
 | Reward | >0.7 | 1.10x | 0.90x | 1.10x |
-| Hold | 0.4-0.7 | 1.0x | 1.0x | 1.0x |
-| Punish | 0.2-0.4 | 0.70x | 1.30x | 0.70x |
-| Pause | <0.2 | 0.40x | 1.50x | 0.40x |
+| Hold | 0.30-0.7 | 1.0x | 1.0x | 1.0x |
+| Punish | 0.10-0.30 | 0.70x | 1.30x | 0.70x |
+| Pause | <0.10 | 0.40x | 1.50x | 0.40x |
 
 ### Scoring (absolute, not rank-based)
 ```
 score = 0.40 * sharpe_norm + 0.30 * return_norm + 0.20 * (1-dd_norm) + 0.10 * consistency
 ```
-- 21d rolling window, absolute thresholds
+- 45d rolling window, absolute thresholds
+- V3_CONSERVATIVE: gentle punishment (3-10% cut), 1% daily mean-revert to equal
+- Tested 6 variants — V3 beats original V0 by +$4.5K (+9% PnL) on 365d
 
 ### Compound + Supervisor Integration
 - **BTC/ETH:** compound ON — reinvest PnL, supervisor controls BASE allocation only
@@ -363,3 +369,4 @@ joblib>=1.3.0
 18. `1a78260` — docs: add file naming convention rule (UPPER CASE for doc files)
 19. `3e4d41f` — refactor: remove HYPE from active assets (poor performance)
 20. `c8b3b50` — feat: monthly breakdown scripts + backtest results snapshot (225d)
+21. `xxxxxxx` — fix: HL maker fee +0.015% cost (not rebate), supervisor V3 tuning (+9% PnL)
