@@ -117,6 +117,11 @@ class MMBacktestResult:
     dynamic_size_max: float = 0.0
     dynamic_size_std: float = 0.0
 
+    # Partial fill stats
+    partial_fills: int = 0
+    full_fills: int = 0
+    avg_fill_ratio: float = 1.0
+
     # Daily breakdown
     daily_pnls: list = field(default_factory=list)
 
@@ -447,6 +452,13 @@ class MMBacktester:
                     else:
                         result.sell_fills += 1
 
+                    # Track partial fill stats
+                    fill_ratio = fill_size / quote.size
+                    if fill_ratio < 0.99:
+                        result.partial_fills += 1
+                    else:
+                        result.full_fills += 1
+
                     if rpnl != 0:
                         spreads_captured.append(abs(rpnl) / fill_size / mid_price * 10000)
 
@@ -550,6 +562,10 @@ class MMBacktester:
             result.dynamic_size_max = float(np.max(dynamic_sizes))
             result.dynamic_size_std = float(np.std(dynamic_sizes))
 
+        # Partial fill ratio
+        if result.total_fills > 0:
+            result.avg_fill_ratio = 1.0 - (result.partial_fills / result.total_fills)
+
         return result
 
     def _simulate_fill(
@@ -558,32 +574,49 @@ class MMBacktester:
         """
         Simulate whether a quote would fill during a candle.
 
+        Partial fills only for shallow penetration (<30%).
+        Deep penetration (>30%) = full fill (realistic for small sizes on HL).
+
         Returns: (fill_price, fill_size, is_adverse) or None
         """
         if quote.side == "buy":
-            # Bid fills if candle low touches or goes below bid
             if candle.low <= quote.price:
-                # Fill probability based on penetration depth
-                penetration = (quote.price - candle.low) / (candle.high - candle.low) if candle.high != candle.low else 0.5
+                candle_range = candle.high - candle.low
+                penetration = (quote.price - candle.low) / candle_range if candle_range > 0 else 0.5
                 fill_prob = min(1.0, 0.3 + penetration * 0.7)
 
-                # Adverse selection: if close < open (bearish candle) and price bounced up
                 adverse = candle.close < candle.open and candle.close < quote.price
 
                 if np.random.random() < fill_prob:
-                    # Fill at quote price (maker)
-                    return (quote.price, quote.size, adverse)
+                    # Deep penetration (>30%) → full fill
+                    # Shallow touch (<30%) → partial fill proportional to depth
+                    if penetration >= 0.3:
+                        fill_size = quote.size
+                    else:
+                        # 0% penetration → ~30% fill, 30% → 100%
+                        fill_ratio = 0.3 + (penetration / 0.3) * 0.7
+                        fill_ratio *= np.random.uniform(0.85, 1.15)
+                        fill_ratio = max(0.15, min(1.0, fill_ratio))
+                        fill_size = quote.size * fill_ratio
+                    return (quote.price, fill_size, adverse)
 
         else:  # sell
-            # Ask fills if candle high touches or goes above ask
             if candle.high >= quote.price:
-                penetration = (candle.high - quote.price) / (candle.high - candle.low) if candle.high != candle.low else 0.5
+                candle_range = candle.high - candle.low
+                penetration = (candle.high - quote.price) / candle_range if candle_range > 0 else 0.5
                 fill_prob = min(1.0, 0.3 + penetration * 0.7)
 
                 adverse = candle.close > candle.open and candle.close > quote.price
 
                 if np.random.random() < fill_prob:
-                    return (quote.price, quote.size, adverse)
+                    if penetration >= 0.3:
+                        fill_size = quote.size
+                    else:
+                        fill_ratio = 0.3 + (penetration / 0.3) * 0.7
+                        fill_ratio *= np.random.uniform(0.85, 1.15)
+                        fill_ratio = max(0.15, min(1.0, fill_ratio))
+                        fill_size = quote.size * fill_ratio
+                    return (quote.price, fill_size, adverse)
 
         return None
 
@@ -667,6 +700,8 @@ def print_results(result: MMBacktestResult, params: QuoteParams):
     print(f"  {'Total fills':<30} {result.total_fills:>15}")
     print(f"  {'  Buy fills':<30} {result.buy_fills:>15}")
     print(f"  {'  Sell fills':<30} {result.sell_fills:>15}")
+    print(f"  {'  Partial fills':<30} {result.partial_fills:>15}")
+    print(f"  {'  Full fills':<30} {result.full_fills:>15}")
     print(f"  {'Round trips':<30} {result.round_trips:>15}")
     print(f"  {'Fills/day':<30} {result.fills_per_day:>15.1f}")
     print()

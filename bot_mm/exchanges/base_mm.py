@@ -11,9 +11,15 @@ class OrderInfo:
     side: str  # "buy" or "sell"
     price: float
     size: float
-    status: str  # "open", "filled", "cancelled"
+    status: str  # "open", "partially_filled", "filled", "cancelled"
+    filled_qty: float = 0.0
+    remaining_qty: float = 0.0
     is_post_only: bool = True
     created_at: float = field(default_factory=time.time)
+
+    def __post_init__(self):
+        if self.remaining_qty == 0.0 and self.filled_qty == 0.0:
+            self.remaining_qty = self.size
 
 
 class BaseMMExchange(ABC):
@@ -64,6 +70,11 @@ class BaseMMExchange(ABC):
     @abstractmethod
     async def get_position(self, symbol: str) -> dict:
         """Return position info: {"size": float, "side": str, "entry_price": float, "unrealized_pnl": float}."""
+        ...
+
+    @abstractmethod
+    async def get_open_orders(self, symbol: str) -> List[OrderInfo]:
+        """Return list of open orders for symbol with fill status."""
         ...
 
     @abstractmethod

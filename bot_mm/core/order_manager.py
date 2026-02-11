@@ -30,6 +30,15 @@ class ManagedOrder:
     quote: Quote
     placed_at: float = 0.0
     modify_count: int = 0
+    filled_qty: float = 0.0
+
+    @property
+    def remaining_qty(self) -> float:
+        return self.size - self.filled_qty
+
+    @property
+    def is_fully_filled(self) -> bool:
+        return self.filled_qty >= self.size - 1e-12
 
 
 class OrderManager:
@@ -160,12 +169,16 @@ class OrderManager:
 
     def on_fill_event(self, oid: str, side: str, price: float, size: float, fee: float = 0.0):
         """
-        Process a fill event. Called by strategy after detecting position changes.
+        Process a fill event (full or partial).
 
-        Removes filled orders from tracking and invokes callback.
+        For partial fills, updates filled_qty and keeps the order active.
+        For full fills, removes the order from tracking.
         """
         if oid in self.active_orders:
-            self.active_orders.pop(oid, None)
+            mo = self.active_orders[oid]
+            mo.filled_qty += size
+            if mo.is_fully_filled:
+                self.active_orders.pop(oid, None)
 
         self.total_fills += 1
         if self.on_fill:
@@ -190,6 +203,50 @@ class OrderManager:
         n = len(self.active_orders)
         self.active_orders.clear()
         return n
+
+    async def check_partial_fills(self, current_price: float, maker_fee: float = -0.00015):
+        """
+        Check exchange for partial fills on active orders.
+
+        Queries open orders from exchange and compares with tracked state.
+        Orders that disappeared were fully filled; orders with reduced size
+        had partial fills.
+        """
+        if not self.active_orders:
+            return []
+
+        fills_detected = []
+        try:
+            exchange_orders = await self.exchange.get_open_orders(self.symbol)
+        except Exception as e:
+            logger.warning("check_partial_fills: get_open_orders failed: %s", e)
+            return fills_detected
+
+        exchange_oids = {o.oid: o for o in exchange_orders}
+
+        for oid in list(self.active_orders.keys()):
+            mo = self.active_orders[oid]
+
+            if oid not in exchange_oids:
+                # Order gone from exchange → fully filled (remaining qty)
+                fill_size = mo.remaining_qty
+                if fill_size > 1e-12:
+                    fee = mo.price * fill_size * maker_fee
+                    self.on_fill_event(oid, mo.side, mo.price, fill_size, fee)
+                    fills_detected.append((mo.side, mo.price, fill_size))
+                else:
+                    # Already fully tracked, just clean up
+                    self.active_orders.pop(oid, None)
+            else:
+                # Order still open — check if partially filled
+                exch_order = exchange_oids[oid]
+                if exch_order.filled_qty > mo.filled_qty + 1e-12:
+                    partial_size = exch_order.filled_qty - mo.filled_qty
+                    fee = mo.price * partial_size * maker_fee
+                    self.on_fill_event(oid, mo.side, mo.price, partial_size, fee)
+                    fills_detected.append((mo.side, mo.price, partial_size))
+
+        return fills_detected
 
     @property
     def num_active(self) -> int:

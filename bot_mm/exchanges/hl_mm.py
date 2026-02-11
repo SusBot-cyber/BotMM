@@ -302,6 +302,41 @@ class HyperliquidMMExchange(BaseMMExchange):
             logger.exception("get_position failed for %s", symbol)
             raise
 
+    async def get_open_orders(self, symbol: str) -> List[OrderInfo]:
+        """Get open orders with fill status for a symbol."""
+        asset = _to_hl_symbol(symbol)
+        try:
+            open_orders = await asyncio.to_thread(
+                self._info.open_orders, self._exchange.account_address
+            )
+            result = []
+            for o in open_orders:
+                if o.get("coin") != asset:
+                    continue
+                orig_sz = float(o.get("origSz", o.get("sz", 0)))
+                remaining_sz = float(o.get("sz", 0))
+                filled_qty = orig_sz - remaining_sz
+                side = "buy" if o.get("side", "").lower() in ("b", "buy") else "sell"
+
+                status = "open"
+                if filled_qty > 1e-12:
+                    status = "partially_filled"
+
+                result.append(OrderInfo(
+                    oid=str(o["oid"]),
+                    symbol=symbol,
+                    side=side,
+                    price=float(o.get("limitPx", 0)),
+                    size=orig_sz,
+                    status=status,
+                    filled_qty=filled_qty,
+                    remaining_qty=remaining_sz,
+                ))
+            return result
+        except Exception:
+            logger.exception("get_open_orders failed for %s", symbol)
+            raise
+
     async def get_balance(self) -> float:
         """Get available USDC balance (cross-margin withdrawable)."""
         try:

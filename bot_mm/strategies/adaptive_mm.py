@@ -351,7 +351,22 @@ class AdaptiveMMStrategy(BasicMMStrategy):
         # 14. Track fills vs quotes for fill rate
         old_fills = self.order_mgr.total_fills
         await self.order_mgr.update_quotes(filtered)
-        await self._detect_fills(mid_price)
+
+        # Detect fills via per-order tracking (supports partial fills)
+        fills = await self.order_mgr.check_partial_fills(
+            mid_price, maker_fee=self.config.maker_fee
+        )
+        for side, price, size in fills:
+            realized = self.inventory.on_fill(side, price, size,
+                                              price * size * self.config.maker_fee)
+            if self._toxicity is not None:
+                self._toxicity.on_fill(side, price, price, size)
+            logger.info(
+                "FILL %s | %s %.6f @ %.2f | realized=$%.2f | pos=%.6f | net_pnl=$%.2f",
+                self.symbol, side.upper(), size, price,
+                realized, self.inventory.state.position_size, self.inventory.net_pnl,
+            )
+
         new_fills = self.order_mgr.total_fills - old_fills
         self.record_fills(new_fills, len(filtered))
 

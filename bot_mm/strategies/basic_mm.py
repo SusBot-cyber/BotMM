@@ -236,8 +236,20 @@ class BasicMMStrategy:
         # 10. Update orders on exchange
         await self.order_mgr.update_quotes(filtered)
 
-        # 11. Detect fills via position change
-        await self._detect_fills(mid_price)
+        # 11. Detect fills via per-order tracking (supports partial fills)
+        fills = await self.order_mgr.check_partial_fills(
+            mid_price, maker_fee=self.config.maker_fee
+        )
+        for side, price, size in fills:
+            realized = self.inventory.on_fill(side, price, size,
+                                              price * size * self.config.maker_fee)
+            if self._toxicity is not None:
+                self._toxicity.on_fill(side, price, price, size)
+            logger.info(
+                "FILL %s | %s %.6f @ %.2f | realized=$%.2f | pos=%.6f | net_pnl=$%.2f",
+                self.symbol, side.upper(), size, price,
+                realized, self.inventory.state.position_size, self.inventory.net_pnl,
+            )
 
         # Periodic logging
         if self._iteration % 60 == 0:
@@ -264,44 +276,6 @@ class BasicMMStrategy:
             ranges = [h - l for h, l in zip(self._price_highs, self._price_lows)]
             avg_range = sum(ranges) / len(ranges)
             self._volatility_pct = max(avg_range / mid_price, 0.0001)
-
-    async def _detect_fills(self, current_price: float):
-        """
-        Detect fills by comparing exchange position with local inventory.
-
-        If position changed, infer fill direction and update inventory.
-        """
-        try:
-            pos_data = await self.exchange.get_position(self.symbol)
-        except Exception:
-            return
-
-        exchange_size = pos_data.get("size", 0.0)
-        exchange_side = pos_data.get("side", "none")
-        exchange_signed = exchange_size if exchange_side == "long" else -exchange_size if exchange_side == "short" else 0.0
-
-        local_signed = self.inventory.state.position_size
-        diff = exchange_signed - local_signed
-
-        if abs(diff) < 1e-10:
-            return
-
-        # Infer fill
-        side = "buy" if diff > 0 else "sell"
-        size = abs(diff)
-        fee = size * current_price * self.config.maker_fee  # Assume maker
-
-        realized = self.inventory.on_fill(side, current_price, size, fee)
-
-        # Record fill for toxicity tracking
-        if self._toxicity is not None:
-            self._toxicity.on_fill(side, current_price, current_price, size)
-
-        logger.info(
-            "FILL %s | %s %.6f @ %.2f | fee=%.4f | realized=$%.2f | pos=%.6f | net_pnl=$%.2f",
-            self.symbol, side.upper(), size, current_price, fee,
-            realized, self.inventory.state.position_size, self.inventory.net_pnl,
-        )
 
     def _handle_fill(self, oid: str, side: str, price: float, size: float, fee: float):
         """Callback from OrderManager on fill events."""
