@@ -32,6 +32,10 @@ Market making bot for crypto perpetuals on Hyperliquid (primary), with future su
 - **New quick-start command** or usage pattern
 - **Dependency changes**
 
+### File Naming Convention
+Documentation files (markdown) MUST use UPPER CASE names: `README.md`, `CLAUDE.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, etc.
+Exception: files inside `docs/` directory use lowercase with underscores (e.g., `docs/architecture.md`, `docs/modules.md`).
+
 ### Module Docstring Standard
 Every Python file MUST have a module-level docstring:
 ```python
