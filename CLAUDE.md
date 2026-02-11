@@ -357,3 +357,7 @@ joblib>=1.3.0
 12. `6b16526` — feat: hot param reload — zero downtime param updates
 13. `9ee9b63` — feat: supervisor risk adjustments + 66 tests (dual control)
 14. `445366d` — feat: compound + supervisor separation (base capital only)
+15. `acd7988` — docs: update CLAUDE.md, MM_BOT_PLAN with Phase 5 + supervisor results
+16. `f77afab` — fix: dynamic HL rounding + metadata monitor + docs overhaul
+17. `b4897f6` — docs: add architecture.md and modules.md reference
+18. `1a78260` — docs: add file naming convention rule (UPPER CASE for doc files)
