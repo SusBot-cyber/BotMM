@@ -2,7 +2,7 @@
 
 ## Project: BotHL Market Maker (bot_mm)
 
-**Status:** ✅ PHASES 1-2, 4 DONE (Phase 3 skipped)  
+**Status:** ✅ PHASES 1-2, 4-5 DONE (Phase 3 skipped)  
 **Start Capital:** €1,000–€10,000  
 **Target Exchanges:** Hyperliquid (primary), Binance Futures, Bybit  
 **Author:** Leon + Claude  
@@ -726,6 +726,26 @@ LOG_QUOTES=false  # Very verbose, enable for debugging
 
 ---
 
+### Phase 5: Production Systems + Meta-Supervisor
+
+**Goal:** Automated optimization, capital allocation, compound growth.
+
+| Task | Description | Complexity | Status | Module |
+|------|-------------|------------|--------|--------|
+| 5.1 | Partial fills (depth-based) | Medium | ✅ DONE | `backtest/mm_backtester.py` — <30% penetration = partial |
+| 5.2 | DynamicSizer (adaptive order sizing) | Medium | ✅ DONE | `bot_mm/core/dynamic_sizer.py` — 76 tests |
+| 5.3 | Compound mode (PnL reinvestment) | Medium | ✅ DONE | `backtest/mm_backtester.py` — `--compound` flag, BTC/ETH only |
+| 5.4 | Daily auto-reoptimizer | High | ✅ DONE | `scripts/daily_reoptimize.py` — 144 combos/asset, drift safety |
+| 5.5 | Hot param reload (zero downtime) | Medium | ✅ DONE | `bot_mm/strategies/basic_mm.py` — file mtime check ~1h |
+| 5.6 | Meta-supervisor (dual control) | High | ✅ DONE | `scripts/backtest_supervisor.py` — capital + risk allocation |
+
+**Key results:**
+- Compound BTC: +56% vs flat, ETH: +66% (SOL: -15% → compound OFF)
+- Supervisor: +21.6% PnL vs equal allocation (225d, $50K)
+- Dual control: capital (slow, ±15%/day) + risk multipliers (fast, ±10%/day)
+
+---
+
 ## 10. Key Differences from Directional Bot
 
 | Aspect | Directional Bot (bot/) | MM Bot (bot_mm/) |
@@ -890,6 +910,7 @@ discord-webhook>=1.0.0            # Notifications (optional)
 | Phase 2 | Adaptive MM, bias, multi-asset | ✅ DONE | 102 |
 | Phase 3 | Cross-exchange arb | ⏭️ SKIPPED | — |
 | Phase 4 | ML + Optimization | ✅ DONE | 222 |
+| Phase 5 | Production systems + supervisor | ✅ DONE | 343 |
 
 ### Performance Progression (365d BTC, $1K capital)
 
@@ -901,6 +922,34 @@ discord-webhook>=1.0.0            # Notifications (optional)
 | + ML fill prediction | $1,146 | 16.4 | — |
 | + Auto-tuner | $1,122 | **17.1** | Sharpe +9% |
 
+### Multi-Asset Results ($10K/asset, optimized, partial fills)
+
+| Asset | Net PnL | Return | Sharpe | Profitable | Compound |
+|-------|---------|--------|--------|------------|----------|
+| ETH | $11,554 | 116% | 10.9 | 81% | ON (+66%) |
+| XRP | $11,033 | 110% | 12.5 | 83% | OFF |
+| BTC | $10,536 | 105% | 17.5 | 90% | ON (+56%) |
+| SOL | $9,253 | 93% | 10.8 | 78% | OFF |
+| HYPE | $5,774 | 58% | 9.1 | 73% | OFF |
+
+### Portfolio Results ($50K, 5 assets, 225d)
+
+| Strategy | Net PnL | Return | Sharpe | Note |
+|----------|---------|--------|--------|------|
+| Equal (flat) | $33,913 | 67.8% | 24.2 | baseline |
+| Equal + compound BTC/ETH | $41,084 | 82.2% | 23.3 | +21.1% |
+| **Supervisor + compound** | **$49,979** | **100.0%** | 22.4 | **+47.3%** vs flat |
+
+### Meta-Supervisor Final State (225d)
+
+| Asset | Base (supervisor) | Compound PnL | Effective | Risk Effect | Mode |
+|-------|-------------------|-------------|-----------|-------------|------|
+| BTC | $11,865 | $11,149 | $23,013 | 1.21x | COMPOUND |
+| ETH | $11,865 | $16,968 | $28,833 | 1.21x | COMPOUND |
+| SOL | $11,865 | $0 | $11,865 | 1.21x | FIXED |
+| XRP | $10,531 | $0 | $10,531 | 1.21x | FIXED |
+| HYPE | $3,874 | $0 | $3,874 | 0.49x | FIXED |
+
 ### ML Module Summary
 
 | Module | File | Purpose | Key Metric |
@@ -911,6 +960,32 @@ discord-webhook>=1.0.0            # Notifications (optional)
 | L2 Recorder | `data/l2_recorder.py` | WebSocket L2 order book data collection | 20 levels/side |
 | OB Backtester | `backtest/ob_backtester.py` | Tick-level order book replay | ~90% realism |
 | Optimizer | `scripts/run_mm_optimizer.py` | Grid search parameter optimization | 216-25K combos |
+| Daily Reoptimizer | `scripts/daily_reoptimize.py` | Nightly auto-reoptimization | 144 combos/asset |
+| Meta-Supervisor | `scripts/backtest_supervisor.py` | Capital + risk allocation | +21.6% vs equal |
+
+### Production Automation
+
+| Component | Schedule | File | Function |
+|-----------|----------|------|----------|
+| Daily reoptimizer | 3am UTC cron | `scripts/daily_reoptimize.py` | Grid search → `data/live_params.json` |
+| Meta-supervisor | 4am UTC cron | `scripts/run_meta_supervisor.py` | Score → allocate → `data/allocations.json` |
+| Hot param reload | ~1h in-loop | `bot_mm/strategies/basic_mm.py` | File mtime check → apply new params |
+
+### Supervisor Dual Control
+
+| Mechanism | Speed | Controls | Limits |
+|-----------|-------|----------|--------|
+| **Capital allocation** | Slow (max ±15%/day) | Base $ per bot | min $500, max 35% |
+| **Risk multipliers** | Fast (max ±10%/day) | Size, spread, max_pos | bounds enforced |
+
+Risk multipliers per score zone:
+
+| Zone | Score | Size | Spread | MaxPos | PnL Effect |
+|------|-------|------|--------|--------|------------|
+| Reward | >0.7 | 1.10x | 0.90x | 1.10x | +21% |
+| Hold | 0.4-0.7 | 1.0x | 1.0x | 1.0x | neutral |
+| Punish | 0.2-0.4 | 0.70x | 1.30x | 0.70x | -51% |
+| Pause | <0.2 | 0.40x | 1.50x | 0.40x | -80% |
 
 ### Git History
 
@@ -923,6 +998,13 @@ discord-webhook>=1.0.0            # Notifications (optional)
 | `0de9bab` | Phase 4.3-4.4: Toxicity detection (132 tests) |
 | `c6223a9` | Phase 4.5: Auto-parameter tuner (Sharpe +9%) |
 | `5b92710` | Phase 4.1-4.2: L2 recorder + OB replay backtester (222 tests) |
+| `eb053a0` | Phase 5.2: DynamicSizer — adaptive order sizing (257 tests) |
+| `4d0f3c3` | fix: scale max_daily_loss with capital (5%) |
+| `7c639f7` | feat: --compound flag for daily PnL reinvestment |
+| `881a63d` | feat: daily auto-reoptimizer + live_params.json |
+| `6b16526` | feat: hot param reload — zero downtime param updates |
+| `9ee9b63` | feat: supervisor risk adjustments + 66 tests (dual control) |
+| `445366d` | feat: compound + supervisor separation (base capital only) |
 
 ---
 
@@ -942,10 +1024,21 @@ discord-webhook>=1.0.0            # Notifications (optional)
 - [x] Directional bias improves PnL by 10%+
 - [x] Monthly ROI > 5% of capital
 
-### Phase 3 (Multi-Exchange + Arb) ⏭️ SKIPPED
-- [ ] Cross-exchange arb profitable
-- [ ] Funding rate arb generates passive income
-- [ ] Total monthly ROI > 10% of capital
+### Phase 4 (Optimization + ML) ✅ DONE
+- [x] ML fill prediction improves PnL
+- [x] Auto-tuner improves Sharpe
+- [x] L2 order book recorder working
+- [x] Order book replay backtester (~90% realism)
+
+### Phase 5 (Production Systems + Supervisor) ✅ DONE
+- [x] Partial fills implemented (depth-based, 30% threshold)
+- [x] DynamicSizer working (76 tests)
+- [x] Compound mode BTC/ETH (+56%/+66% vs flat)
+- [x] Daily auto-reoptimizer (144 combos, drift safety 30%)
+- [x] Hot param reload (zero downtime, ~1h interval)
+- [x] Meta-supervisor dual control (capital + risk, +21.6% vs equal)
+- [x] Supervisor + compound don't conflict (base capital separation)
+- [x] 343 tests passing
 
 ---
 

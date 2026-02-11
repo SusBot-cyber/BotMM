@@ -1,46 +1,39 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Market Making Bot</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BotMM - Market Making Bot Plan</title>
 <style>
-  @media print { @page { margin: 1.5cm; size: A4; } }
-  body { font-family: 'Segoe UI', Calibri, Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; line-height: 1.5; color: #1a1a1a; font-size: 11pt; }
-  h1 { color: #0d47a1; border-bottom: 3px solid #0d47a1; padding-bottom: 8px; font-size: 20pt; }
-  h2 { color: #1565c0; border-bottom: 2px solid #1565c0; padding-bottom: 5px; margin-top: 30px; font-size: 15pt; page-break-after: avoid; }
-  h3 { color: #1976d2; margin-top: 20px; font-size: 12pt; page-break-after: avoid; }
-  table { border-collapse: collapse; width: 100%%; margin: 10px 0; font-size: 10pt; page-break-inside: avoid; }
-  th { background: #1565c0; color: white; padding: 6px 10px; text-align: left; font-weight: 600; }
-  td { padding: 5px 10px; border: 1px solid #ddd; }
-  tr:nth-child(even) { background: #f5f5f5; }
-  code { background: #f5f5f5; padding: 1px 4px; border-radius: 3px; font-family: Consolas, monospace; font-size: 10pt; }
-  pre { background: #263238; color: #eeffff; padding: 12px; border-radius: 5px; overflow-x: auto; font-size: 9pt; line-height: 1.4; page-break-inside: avoid; }
-  pre code { background: none; color: inherit; padding: 0; }
-  blockquote { border-left: 4px solid #1565c0; margin: 10px 0; padding: 8px 15px; background: #e3f2fd; }
-  strong { color: #0d47a1; }
-  .header { background: linear-gradient(135deg, #0d47a1, #1976d2); color: white; padding: 25px; border-radius: 8px; margin-bottom: 25px; }
-  .header h1 { color: white; border: none; margin: 0; font-size: 22pt; }
-  .header p { color: #bbdefb; margin: 5px 0 0 0; font-size: 11pt; }
-  .footer { text-align: center; color: #999; font-size: 9pt; margin-top: 40px; border-top: 1px solid #ddd; padding-top: 10px; }
-  ul, ol { padding-left: 25px; }
-  li { margin: 3px 0; }
-  hr { border: none; border-top: 2px solid #e0e0e0; margin: 25px 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+       max-width: 1000px; margin: 0 auto; padding: 20px; line-height: 1.6; color: #24292f; }
+h1 { border-bottom: 2px solid #d0d7de; padding-bottom: 8px; }
+h2 { border-bottom: 1px solid #d0d7de; padding-bottom: 6px; margin-top: 32px; }
+h3 { margin-top: 24px; }
+table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+th, td { border: 1px solid #d0d7de; padding: 8px 12px; text-align: left; }
+th { background-color: #f6f8fa; font-weight: 600; }
+tr:nth-child(even) { background-color: #f6f8fa; }
+code { background-color: #f6f8fa; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+pre { background-color: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+a { color: #0969da; text-decoration: none; }
+a:hover { text-decoration: underline; }
+strong { color: #1a7f37; }
+@media print { body { max-width: 100%; } }
 </style>
 </head>
 <body>
-<div class="header">
-  <h1>Market Making Bot</h1>
-  <p>Implementation Plan | Hyperliquid + Binance + Bybit</p>
-</div>
-<h2>Project: BotHL Market Maker (bot_mm)</h2>
-<p><strong>Status:</strong> PLANNING<br />
+<h1 id="market-making-bot-implementation-plan">Market Making Bot — Implementation Plan</h1>
+<h2 id="project-bothl-market-maker-bot_mm">Project: BotHL Market Maker (bot_mm)</h2>
+<p><strong>Status:</strong> ✅ PHASES 1-2, 4-5 DONE (Phase 3 skipped)<br />
 <strong>Start Capital:</strong> €1,000–€10,000<br />
 <strong>Target Exchanges:</strong> Hyperliquid (primary), Binance Futures, Bybit<br />
 <strong>Author:</strong> Leon + Claude<br />
 <strong>Date:</strong> 2026-02-11  </p>
 <hr />
-<h2>1. Executive Summary</h2>
-<h3>Why Market Making?</h3>
+<h2 id="1-executive-summary">1. Executive Summary</h2>
+<h3 id="why-market-making">Why Market Making?</h3>
 <p>Our directional strategy (Kalman+QQE) generates $2.52 per trade at $20 risk — a real but microscopic edge. Market making is fundamentally different: instead of predicting direction, we <strong>profit from providing liquidity</strong>.</p>
 <table>
 <thead>
@@ -84,7 +77,7 @@
 </tbody>
 </table>
 <p><strong>Key insight:</strong> The two strategies are <strong>complementary</strong> — MM earns in range, directional earns in trend. Running both maximizes all-weather profitability.</p>
-<h3>Revenue Projection (Conservative)</h3>
+<h3 id="revenue-projection-conservative">Revenue Projection (Conservative)</h3>
 <table>
 <thead>
 <tr>
@@ -121,8 +114,8 @@
 </table>
 <p><em>Revenue assumes 30% spread capture, maker rebates, minus 40% adverse selection loss.</em></p>
 <hr />
-<h2>2. Exchange Fee Comparison</h2>
-<h3>Fee Structure</h3>
+<h2 id="2-exchange-fee-comparison">2. Exchange Fee Comparison</h2>
+<h3 id="fee-structure">Fee Structure</h3>
 <table>
 <thead>
 <tr>
@@ -163,7 +156,7 @@
 </table>
 <p><strong>HL advantage:</strong> Every maker fill <strong>earns</strong> 0.015% vs <strong>costs</strong> 0.02% on Binance/Bybit.<br />
 On $50k daily volume: HL = <strong>+$7.50</strong> rebate vs Binance = <strong>-$10.00</strong> cost = <strong>$17.50/day difference</strong>.</p>
-<h3>Spread Comparison (Live 2026-02-11)</h3>
+<h3 id="spread-comparison-live-2026-02-11">Spread Comparison (Live 2026-02-11)</h3>
 <table>
 <thead>
 <tr>
@@ -195,7 +188,7 @@ On $50k daily volume: HL = <strong>+$7.50</strong> rebate vs Binance = <strong>-
 </tbody>
 </table>
 <p><strong>Observation:</strong> Binance/Bybit have near-zero spreads on majors (dominated by HFT). HL has wider spreads = <strong>more opportunity for retail MMs</strong>. Altcoins on all exchanges have much wider spreads.</p>
-<h3>Recommended Exchange Strategy</h3>
+<h3 id="recommended-exchange-strategy">Recommended Exchange Strategy</h3>
 <table>
 <thead>
 <tr>
@@ -227,8 +220,8 @@ On $50k daily volume: HL = <strong>+$7.50</strong> rebate vs Binance = <strong>-
 </tbody>
 </table>
 <hr />
-<h2>3. Market Making Theory</h2>
-<h3>3.1 How It Works</h3>
+<h2 id="3-market-making-theory">3. Market Making Theory</h2>
+<h3 id="31-how-it-works">3.1 How It Works</h3>
 <pre><code>           BID (buy order)                ASK (sell order)
            ────────────────              ────────────────
 Price:     $66,990                       $67,010
@@ -239,13 +232,13 @@ If BOTH fill → Profit = $67,010 - $66,990 = $20 (spread capture)
 Plus maker rebate: 0.015% × $670 × 2 = $0.20
 Total: $20.20 per round trip
 </code></pre>
-<h3>3.2 Key Concepts</h3>
+<h3 id="32-key-concepts">3.2 Key Concepts</h3>
 <p><strong>Spread:</strong> Difference between best bid and best ask. Wider spread = more profit per trade, but fewer fills.</p>
 <p><strong>Inventory:</strong> Net position accumulated from fills. If only your bid fills, you're LONG. If only your ask fills, you're SHORT. Inventory is the main risk.</p>
 <p><strong>Adverse Selection:</strong> When informed traders (who know price will move) take your quotes. You get filled on the wrong side right before a move.</p>
 <p><strong>Skew:</strong> Adjusting your quotes based on inventory. If you're long, lower both bid and ask to encourage selling. If short, raise both.</p>
 <p><strong>Quote Width:</strong> How far from mid-price you place orders. Tighter = more fills, more adverse selection. Wider = fewer fills, less adverse selection.</p>
-<h3>3.3 The Avellaneda-Stoikov Model</h3>
+<h3 id="33-the-avellaneda-stoikov-model">3.3 The Avellaneda-Stoikov Model</h3>
 <p>The foundational MM model. Optimal quotes:</p>
 <pre><code>reservation_price = mid_price - inventory × γ × σ² × T
 optimal_spread = γ × σ² × T + (2/γ) × ln(1 + γ/κ)
@@ -262,8 +255,8 @@ bid = mid_price - spread/2 - inventory_skew
 ask = mid_price + spread/2 - inventory_skew
 </code></pre>
 <hr />
-<h2>4. Architecture</h2>
-<h3>4.1 Directory Structure</h3>
+<h2 id="4-architecture">4. Architecture</h2>
+<h3 id="41-directory-structure">4.1 Directory Structure</h3>
 <pre><code>bot_mm/
 ├── main.py                 # Main orchestrator (async event loop)
 ├── config.py               # Per-exchange, per-asset configuration
@@ -298,7 +291,7 @@ ask = mid_price + spread/2 - inventory_skew
     ├── formatter.py         # Reuse from bot/utils/
     └── metrics.py           # PnL tracking, fill rates, inventory stats
 </code></pre>
-<h3>4.2 Component Diagram</h3>
+<h3 id="42-component-diagram">4.2 Component Diagram</h3>
 <pre><code>┌─────────────────────────────────────────────────────────┐
 │                     main.py                              │
 │                  (Async Event Loop)                      │
@@ -339,7 +332,7 @@ ask = mid_price + spread/2 - inventory_skew
 │  └──────────────────────────────────────┘              │
 └─────────────────────────────────────────────────────────┘
 </code></pre>
-<h3>4.3 Event Loop Flow</h3>
+<h3 id="43-event-loop-flow">4.3 Event Loop Flow</h3>
 <pre><code>Every ~200ms (HL block time):
 ┌──────────────────────────────────────────────────────────────┐
 │ 1. Receive WebSocket updates                                  │
@@ -373,8 +366,8 @@ ask = mid_price + spread/2 - inventory_skew
 └──────────────────────────────────────────────────────────────┘
 </code></pre>
 <hr />
-<h2>5. Core Components — Detailed Specification</h2>
-<h3>5.1 Quote Engine (quoter.py)</h3>
+<h2 id="5-core-components-detailed-specification">5. Core Components — Detailed Specification</h2>
+<h3 id="51-quote-engine-quoterpy">5.1 Quote Engine (quoter.py)</h3>
 <pre><code class="language-python">@dataclass
 class QuoteParams:
     base_spread_bps: float = 2.0      # Minimum spread in basis points
@@ -410,7 +403,7 @@ class QuoteEngine:
 Level 2: mid ± spread/2 + 1bp  (size: 35% of total)
 Level 3: mid ± spread/2 + 2bp  (size: 25% of total)
 </code></pre>
-<h3>5.2 Inventory Manager (inventory.py)</h3>
+<h3 id="52-inventory-manager-inventorypy">5.2 Inventory Manager (inventory.py)</h3>
 <pre><code class="language-python">@dataclass
 class InventoryState:
     symbol: str
@@ -477,7 +470,7 @@ class InventoryManager:
 </tr>
 </tbody>
 </table>
-<h3>5.3 Risk Manager (risk.py)</h3>
+<h3 id="53-risk-manager-riskpy">5.3 Risk Manager (risk.py)</h3>
 <pre><code class="language-python">@dataclass
 class RiskLimits:
     max_position_usd: float = 500.0       # Max inventory per asset
@@ -535,7 +528,7 @@ class RiskManager:
 </tr>
 </tbody>
 </table>
-<h3>5.4 Order Manager (order_manager.py)</h3>
+<h3 id="54-order-manager-order_managerpy">5.4 Order Manager (order_manager.py)</h3>
 <pre><code class="language-python">class OrderManager:
     def __init__(self, exchange):
         self.active_orders = {}  # oid → OrderInfo
@@ -563,7 +556,7 @@ class RiskManager:
 6. All orders placed as ALO (Add Liquidity Only / Post-Only)
    → Guarantees maker fee, never crosses spread
 </code></pre>
-<h3>5.5 Directional Bias (signals.py) — Optional</h3>
+<h3 id="55-directional-bias-signalspy-optional">5.5 Directional Bias (signals.py) — Optional</h3>
 <pre><code class="language-python">class DirectionalBias:
     &quot;&quot;&quot;
     Uses Kalman Filter + QQE from our existing strategy
@@ -583,8 +576,8 @@ class RiskManager:
 </code></pre>
 <p>This is our <strong>secret weapon</strong> — combining directional intelligence from Kalman+QQE with MM execution. Most MM bots are direction-agnostic. Ours can be direction-aware.</p>
 <hr />
-<h2>6. Exchange-Specific Implementation</h2>
-<h3>6.1 Hyperliquid (hl_mm.py) — Primary</h3>
+<h2 id="6-exchange-specific-implementation">6. Exchange-Specific Implementation</h2>
+<h3 id="61-hyperliquid-hl_mmpy-primary">6.1 Hyperliquid (hl_mm.py) — Primary</h3>
 <p><strong>Advantages:</strong>
 - Maker rebate: -0.015% (get paid to provide liquidity)
 - Wider spreads than CEX (more profit per trade)
@@ -618,7 +611,7 @@ exchange.schedule_cancel(int(time.time() * 1000) + 60000)  # 60s from now
 - Update quotes every 500ms–1s
 - Use batchModify for efficiency (1 request = update all orders)
 - Keep scheduleCancel alive (renew every 30s)</p>
-<h3>6.2 Binance Futures (binance_mm.py)</h3>
+<h3 id="62-binance-futures-binance_mmpy">6.2 Binance Futures (binance_mm.py)</h3>
 <p><strong>Advantages:</strong>
 - Deepest liquidity in crypto
 - Most altcoins available
@@ -638,7 +631,7 @@ client.futures_create_order(
 )
 </code></pre>
 <p><strong>Best for:</strong> Altcoin MM, hedging HL inventory, cross-exchange arb.</p>
-<h3>6.3 Bybit (bybit_mm.py)</h3>
+<h3 id="63-bybit-bybit_mmpy">6.3 Bybit (bybit_mm.py)</h3>
 <p><strong>Advantages:</strong>
 - V5 unified API (clean design)
 - PostOnly order type supported
@@ -653,8 +646,8 @@ client.futures_create_order(
 </code></pre>
 <p><strong>Best for:</strong> Backup exchange, cross-exchange arb with HL.</p>
 <hr />
-<h2>7. Strategies</h2>
-<h3>7.1 Phase 1: Basic Spread Capture (basic_mm.py)</h3>
+<h2 id="7-strategies">7. Strategies</h2>
+<h3 id="71-phase-1-basic-spread-capture-basic_mmpy">7.1 Phase 1: Basic Spread Capture (basic_mm.py)</h3>
 <p><strong>Simplest viable MM strategy.</strong></p>
 <pre><code>Configuration:
   pair: BTC-USDC
@@ -676,7 +669,7 @@ Logic:
 - Fill rate: 20–40 round trips/day
 - Revenue: $3–10/day on $1k capital
 - Risk: inventory can go to $500 in adverse move</p>
-<h3>7.2 Phase 2: Adaptive MM (adaptive_mm.py)</h3>
+<h3 id="72-phase-2-adaptive-mm-adaptive_mmpy">7.2 Phase 2: Adaptive MM (adaptive_mm.py)</h3>
 <p><strong>Avellaneda-Stoikov with enhancements.</strong></p>
 <pre><code>Additions over basic:
   - Volatility-adjusted spread (ATR-based)
@@ -686,7 +679,7 @@ Logic:
   - Multiple assets simultaneously
   - Automatic parameter tuning
 </code></pre>
-<h3>7.3 Phase 3: Cross-Exchange Arb (cross_exchange.py)</h3>
+<h3 id="73-phase-3-cross-exchange-arb-cross_exchangepy">7.3 Phase 3: Cross-Exchange Arb (cross_exchange.py)</h3>
 <p><strong>Arbitrage price differences between HL and Binance/Bybit.</strong></p>
 <pre><code>Logic:
   1. Monitor price on HL and Binance simultaneously
@@ -702,8 +695,8 @@ Logic:
 - Fee advantage: HL maker (-0.015%) + Binance taker (0.04%) = net 0.025%
   → Need &gt; 0.025% price difference to profit</p>
 <hr />
-<h2>8. Configuration</h2>
-<h3>8.1 Environment Variables (.env)</h3>
+<h2 id="8-configuration">8. Configuration</h2>
+<h3 id="81-environment-variables-env">8.1 Environment Variables (.env)</h3>
 <pre><code class="language-env"># === EXCHANGE CREDENTIALS ===
 # Hyperliquid
 HL_PRIVATE_KEY=0x...
@@ -772,8 +765,8 @@ LOG_FILLS=true
 LOG_QUOTES=false  # Very verbose, enable for debugging
 </code></pre>
 <hr />
-<h2>9. Implementation Phases</h2>
-<h3>Phase 1: Basic MM on HL — BTC only</h3>
+<h2 id="9-implementation-phases">9. Implementation Phases</h2>
+<h3 id="phase-1-basic-mm-on-hl-btc-only">Phase 1: Basic MM on HL — BTC only</h3>
 <p><strong>Goal:</strong> Validate MM concept, learn real-world behavior.</p>
 <table>
 <thead>
@@ -852,7 +845,7 @@ LOG_QUOTES=false  # Very verbose, enable for debugging
 </tbody>
 </table>
 <p><strong>Deliverable:</strong> Bot that quotes BTC/USDC on HL with basic spread capture.</p>
-<h3>Phase 2: Multi-Asset + Adaptive</h3>
+<h3 id="phase-2-multi-asset-adaptive">Phase 2: Multi-Asset + Adaptive</h3>
 <p><strong>Goal:</strong> Scale to multiple assets, add intelligence.</p>
 <table>
 <thead>
@@ -901,7 +894,7 @@ LOG_QUOTES=false  # Very verbose, enable for debugging
 </tbody>
 </table>
 <p><strong>Deliverable:</strong> Multi-asset adaptive MM with optional directional bias.</p>
-<h3>Phase 3: Multi-Exchange + Arb</h3>
+<h3 id="phase-3-multi-exchange-arb">Phase 3: Multi-Exchange + Arb</h3>
 <p><strong>Goal:</strong> Add Binance/Bybit, cross-exchange arbitrage.</p>
 <table>
 <thead>
@@ -940,7 +933,7 @@ LOG_QUOTES=false  # Very verbose, enable for debugging
 </tbody>
 </table>
 <p><strong>Deliverable:</strong> Cross-exchange MM + arb system.</p>
-<h3>Phase 4: Optimization + ML</h3>
+<h3 id="phase-4-optimization-ml">Phase 4: Optimization + ML</h3>
 <p><strong>Goal:</strong> Maximize edge, automate parameter tuning.</p>
 <table>
 <thead>
@@ -958,40 +951,102 @@ LOG_QUOTES=false  # Very verbose, enable for debugging
 <td>Historical order book data collection</td>
 <td>Medium</td>
 <td>✅ DONE</td>
-<td><code>bot_mm/data/l2_recorder.py</code></td>
+<td><code>bot_mm/data/l2_recorder.py</code> — HL WebSocket L2 stream → CSV</td>
 </tr>
 <tr>
 <td>4.2</td>
 <td>MM backtester (order book replay)</td>
 <td>Very High</td>
 <td>✅ DONE</td>
-<td><code>backtest/ob_backtester.py</code></td>
+<td><code>backtest/ob_backtester.py</code> — tick-level, queue position, ~90% realism</td>
 </tr>
 <tr>
 <td>4.3</td>
 <td>ML-based spread prediction</td>
 <td>High</td>
 <td>✅ DONE</td>
-<td><code>bot_mm/ml/fill_predictor.py</code></td>
+<td><code>bot_mm/ml/fill_predictor.py</code> — GBM, AUC 0.77, +1.2% PnL</td>
 </tr>
 <tr>
 <td>4.4</td>
-<td>Toxicity detection</td>
+<td>Toxicity detection (adverse selection)</td>
 <td>High</td>
 <td>✅ DONE</td>
-<td><code>bot_mm/ml/toxicity.py</code></td>
+<td><code>bot_mm/ml/toxicity.py</code> — per-side EMA, spread multiplier</td>
 </tr>
 <tr>
 <td>4.5</td>
 <td>Auto-parameter tuning</td>
 <td>High</td>
 <td>✅ DONE</td>
-<td><code>bot_mm/ml/auto_tuner.py</code></td>
+<td><code>bot_mm/ml/auto_tuner.py</code> — runtime self-adjust, Sharpe +9%</td>
 </tr>
 </tbody>
 </table>
 <hr />
-<h2>10. Key Differences from Directional Bot</h2>
+<h3 id="phase-5-production-systems-meta-supervisor">Phase 5: Production Systems + Meta-Supervisor</h3>
+<p><strong>Goal:</strong> Automated optimization, capital allocation, compound growth.</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Description</th>
+<th>Complexity</th>
+<th>Status</th>
+<th>Module</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>5.1</td>
+<td>Partial fills (depth-based)</td>
+<td>Medium</td>
+<td>✅ DONE</td>
+<td><code>backtest/mm_backtester.py</code> — &lt;30% penetration = partial</td>
+</tr>
+<tr>
+<td>5.2</td>
+<td>DynamicSizer (adaptive order sizing)</td>
+<td>Medium</td>
+<td>✅ DONE</td>
+<td><code>bot_mm/core/dynamic_sizer.py</code> — 76 tests</td>
+</tr>
+<tr>
+<td>5.3</td>
+<td>Compound mode (PnL reinvestment)</td>
+<td>Medium</td>
+<td>✅ DONE</td>
+<td><code>backtest/mm_backtester.py</code> — <code>--compound</code> flag, BTC/ETH only</td>
+</tr>
+<tr>
+<td>5.4</td>
+<td>Daily auto-reoptimizer</td>
+<td>High</td>
+<td>✅ DONE</td>
+<td><code>scripts/daily_reoptimize.py</code> — 144 combos/asset, drift safety</td>
+</tr>
+<tr>
+<td>5.5</td>
+<td>Hot param reload (zero downtime)</td>
+<td>Medium</td>
+<td>✅ DONE</td>
+<td><code>bot_mm/strategies/basic_mm.py</code> — file mtime check ~1h</td>
+</tr>
+<tr>
+<td>5.6</td>
+<td>Meta-supervisor (dual control)</td>
+<td>High</td>
+<td>✅ DONE</td>
+<td><code>scripts/backtest_supervisor.py</code> — capital + risk allocation</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key results:</strong>
+- Compound BTC: +56% vs flat, ETH: +66% (SOL: -15% → compound OFF)
+- Supervisor: +21.6% PnL vs equal allocation (225d, $50K)
+- Dual control: capital (slow, ±15%/day) + risk multipliers (fast, ±10%/day)</p>
+<hr />
+<h2 id="10-key-differences-from-directional-bot">10. Key Differences from Directional Bot</h2>
 <table>
 <thead>
 <tr>
@@ -1049,14 +1104,14 @@ LOG_QUOTES=false  # Very verbose, enable for debugging
 </tbody>
 </table>
 <hr />
-<h2>11. Funding Rate Arbitrage Module</h2>
-<h3>Concept</h3>
+<h2 id="11-funding-rate-arbitrage-module">11. Funding Rate Arbitrage Module</h2>
+<h3 id="concept">Concept</h3>
 <p>When HL funding rate &gt; Binance funding rate:
 1. <strong>Short on HL</strong> (receive high funding)
 2. <strong>Long on Binance</strong> (pay low funding or receive negative)
 3. Net position = 0 (delta neutral)
 4. Profit = difference in funding rates</p>
-<h3>Current Opportunities (Live 2026-02-11)</h3>
+<h3 id="current-opportunities-live-2026-02-11">Current Opportunities (Live 2026-02-11)</h3>
 <p>Top funding rate differentials (HL vs Binance, annualized):</p>
 <table>
 <thead>
@@ -1089,7 +1144,7 @@ LOG_QUOTES=false  # Very verbose, enable for debugging
 </tbody>
 </table>
 <p><em>Note: These are snapshot values. Funding rates change every hour on HL.</em></p>
-<h3>Implementation</h3>
+<h3 id="implementation">Implementation</h3>
 <pre><code class="language-python">class FundingArbitrage:
     &quot;&quot;&quot;
     Monitor funding rate differences between HL and Binance.
@@ -1103,8 +1158,8 @@ LOG_QUOTES=false  # Very verbose, enable for debugging
     &quot;&quot;&quot;
 </code></pre>
 <hr />
-<h2>12. Risk Management Deep Dive</h2>
-<h3>12.1 Position Limits</h3>
+<h2 id="12-risk-management-deep-dive">12. Risk Management Deep Dive</h2>
+<h3 id="121-position-limits">12.1 Position Limits</h3>
 <pre><code>Per-asset:
   max_position_usd = min(capital × 10%, $500)
 
@@ -1118,7 +1173,7 @@ Total portfolio:
   max_total_position_usd = capital × 40% = $2,000
   → Never more than 40% of capital at risk in inventory
 </code></pre>
-<h3>12.2 Worst Case Scenarios</h3>
+<h3 id="122-worst-case-scenarios">12.2 Worst Case Scenarios</h3>
 <table>
 <thead>
 <tr>
@@ -1155,7 +1210,7 @@ Total portfolio:
 </tr>
 </tbody>
 </table>
-<h3>12.3 Dead Man's Switch</h3>
+<h3 id="123-dead-mans-switch">12.3 Dead Man's Switch</h3>
 <p>HL's <code>scheduleCancel</code> is critical for MM safety:</p>
 <pre><code class="language-python"># Renew every 30 seconds
 # If bot crashes, all orders auto-cancel after 60s
@@ -1164,8 +1219,8 @@ async def renew_dead_man_switch(self):
     self.exchange.schedule_cancel(cancel_time)
 </code></pre>
 <hr />
-<h2>13. Metrics &amp; Monitoring</h2>
-<h3>Dashboard Metrics (Discord + Log)</h3>
+<h2 id="13-metrics-monitoring">13. Metrics &amp; Monitoring</h2>
+<h3 id="dashboard-metrics-discord-log">Dashboard Metrics (Discord + Log)</h3>
 <pre><code>=== MM BOT STATUS (every 5 min) ===
 Runtime: 4h 23m
 Assets: BTC, ETH, SOL
@@ -1191,7 +1246,7 @@ TOTAL:
   Risk Status: NORMAL ✅
 </code></pre>
 <hr />
-<h2>14. Dependencies</h2>
+<h2 id="14-dependencies">14. Dependencies</h2>
 <pre><code># Core
 hyperliquid-python-sdk&gt;=0.1.0    # HL API
 python-binance&gt;=1.0.0             # Binance API (optional)
@@ -1209,8 +1264,9 @@ python-dotenv&gt;=1.0.0              # Config
 # Monitoring
 discord-webhook&gt;=1.0.0            # Notifications (optional)
 </code></pre>
-<h2>Implementation Results (2026-02-11)</h2>
-<h3>Phase Completion Status</h3>
+<hr />
+<h2 id="implementation-results-2026-02-11">Implementation Results (2026-02-11)</h2>
+<h3 id="phase-completion-status">Phase Completion Status</h3>
 <table>
 <thead>
 <tr>
@@ -1245,9 +1301,15 @@ discord-webhook&gt;=1.0.0            # Notifications (optional)
 <td>✅ DONE</td>
 <td>222</td>
 </tr>
+<tr>
+<td>Phase 5</td>
+<td>Production systems + supervisor</td>
+<td>✅ DONE</td>
+<td>343</td>
+</tr>
 </tbody>
 </table>
-<h3>Performance Progression (365d BTC, $1K capital)</h3>
+<h3 id="performance-progression-365d-btc-1k-capital">Performance Progression (365d BTC, $1K capital)</h3>
 <table>
 <thead>
 <tr>
@@ -1290,7 +1352,152 @@ discord-webhook&gt;=1.0.0            # Notifications (optional)
 </tr>
 </tbody>
 </table>
-<h3>ML Module Summary</h3>
+<h3 id="multi-asset-results-10kasset-optimized-partial-fills">Multi-Asset Results ($10K/asset, optimized, partial fills)</h3>
+<table>
+<thead>
+<tr>
+<th>Asset</th>
+<th>Net PnL</th>
+<th>Return</th>
+<th>Sharpe</th>
+<th>Profitable</th>
+<th>Compound</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ETH</td>
+<td>$11,554</td>
+<td>116%</td>
+<td>10.9</td>
+<td>81%</td>
+<td>ON (+66%)</td>
+</tr>
+<tr>
+<td>XRP</td>
+<td>$11,033</td>
+<td>110%</td>
+<td>12.5</td>
+<td>83%</td>
+<td>OFF</td>
+</tr>
+<tr>
+<td>BTC</td>
+<td>$10,536</td>
+<td>105%</td>
+<td>17.5</td>
+<td>90%</td>
+<td>ON (+56%)</td>
+</tr>
+<tr>
+<td>SOL</td>
+<td>$9,253</td>
+<td>93%</td>
+<td>10.8</td>
+<td>78%</td>
+<td>OFF</td>
+</tr>
+<tr>
+<td>HYPE</td>
+<td>$5,774</td>
+<td>58%</td>
+<td>9.1</td>
+<td>73%</td>
+<td>OFF</td>
+</tr>
+</tbody>
+</table>
+<h3 id="portfolio-results-50k-5-assets-225d">Portfolio Results ($50K, 5 assets, 225d)</h3>
+<table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th>Net PnL</th>
+<th>Return</th>
+<th>Sharpe</th>
+<th>Note</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Equal (flat)</td>
+<td>$33,913</td>
+<td>67.8%</td>
+<td>24.2</td>
+<td>baseline</td>
+</tr>
+<tr>
+<td>Equal + compound BTC/ETH</td>
+<td>$41,084</td>
+<td>82.2%</td>
+<td>23.3</td>
+<td>+21.1%</td>
+</tr>
+<tr>
+<td><strong>Supervisor + compound</strong></td>
+<td><strong>$49,979</strong></td>
+<td><strong>100.0%</strong></td>
+<td>22.4</td>
+<td><strong>+47.3%</strong> vs flat</td>
+</tr>
+</tbody>
+</table>
+<h3 id="meta-supervisor-final-state-225d">Meta-Supervisor Final State (225d)</h3>
+<table>
+<thead>
+<tr>
+<th>Asset</th>
+<th>Base (supervisor)</th>
+<th>Compound PnL</th>
+<th>Effective</th>
+<th>Risk Effect</th>
+<th>Mode</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BTC</td>
+<td>$11,865</td>
+<td>$11,149</td>
+<td>$23,013</td>
+<td>1.21x</td>
+<td>COMPOUND</td>
+</tr>
+<tr>
+<td>ETH</td>
+<td>$11,865</td>
+<td>$16,968</td>
+<td>$28,833</td>
+<td>1.21x</td>
+<td>COMPOUND</td>
+</tr>
+<tr>
+<td>SOL</td>
+<td>$11,865</td>
+<td>$0</td>
+<td>$11,865</td>
+<td>1.21x</td>
+<td>FIXED</td>
+</tr>
+<tr>
+<td>XRP</td>
+<td>$10,531</td>
+<td>$0</td>
+<td>$10,531</td>
+<td>1.21x</td>
+<td>FIXED</td>
+</tr>
+<tr>
+<td>HYPE</td>
+<td>$3,874</td>
+<td>$0</td>
+<td>$3,874</td>
+<td>0.49x</td>
+<td>FIXED</td>
+</tr>
+</tbody>
+</table>
+<h3 id="ml-module-summary">ML Module Summary</h3>
 <table>
 <thead>
 <tr>
@@ -1337,9 +1544,124 @@ discord-webhook&gt;=1.0.0            # Notifications (optional)
 <td>Grid search parameter optimization</td>
 <td>216-25K combos</td>
 </tr>
+<tr>
+<td>Daily Reoptimizer</td>
+<td><code>scripts/daily_reoptimize.py</code></td>
+<td>Nightly auto-reoptimization</td>
+<td>144 combos/asset</td>
+</tr>
+<tr>
+<td>Meta-Supervisor</td>
+<td><code>scripts/backtest_supervisor.py</code></td>
+<td>Capital + risk allocation</td>
+<td>+21.6% vs equal</td>
+</tr>
 </tbody>
 </table>
-<h3>Git History</h3>
+<h3 id="production-automation">Production Automation</h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Schedule</th>
+<th>File</th>
+<th>Function</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Daily reoptimizer</td>
+<td>3am UTC cron</td>
+<td><code>scripts/daily_reoptimize.py</code></td>
+<td>Grid search → <code>data/live_params.json</code></td>
+</tr>
+<tr>
+<td>Meta-supervisor</td>
+<td>4am UTC cron</td>
+<td><code>scripts/run_meta_supervisor.py</code></td>
+<td>Score → allocate → <code>data/allocations.json</code></td>
+</tr>
+<tr>
+<td>Hot param reload</td>
+<td>~1h in-loop</td>
+<td><code>bot_mm/strategies/basic_mm.py</code></td>
+<td>File mtime check → apply new params</td>
+</tr>
+</tbody>
+</table>
+<h3 id="supervisor-dual-control">Supervisor Dual Control</h3>
+<table>
+<thead>
+<tr>
+<th>Mechanism</th>
+<th>Speed</th>
+<th>Controls</th>
+<th>Limits</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Capital allocation</strong></td>
+<td>Slow (max ±15%/day)</td>
+<td>Base $ per bot</td>
+<td>min $500, max 35%</td>
+</tr>
+<tr>
+<td><strong>Risk multipliers</strong></td>
+<td>Fast (max ±10%/day)</td>
+<td>Size, spread, max_pos</td>
+<td>bounds enforced</td>
+</tr>
+</tbody>
+</table>
+<p>Risk multipliers per score zone:</p>
+<table>
+<thead>
+<tr>
+<th>Zone</th>
+<th>Score</th>
+<th>Size</th>
+<th>Spread</th>
+<th>MaxPos</th>
+<th>PnL Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Reward</td>
+<td>&gt;0.7</td>
+<td>1.10x</td>
+<td>0.90x</td>
+<td>1.10x</td>
+<td>+21%</td>
+</tr>
+<tr>
+<td>Hold</td>
+<td>0.4-0.7</td>
+<td>1.0x</td>
+<td>1.0x</td>
+<td>1.0x</td>
+<td>neutral</td>
+</tr>
+<tr>
+<td>Punish</td>
+<td>0.2-0.4</td>
+<td>0.70x</td>
+<td>1.30x</td>
+<td>0.70x</td>
+<td>-51%</td>
+</tr>
+<tr>
+<td>Pause</td>
+<td>&lt;0.2</td>
+<td>0.40x</td>
+<td>1.50x</td>
+<td>0.40x</td>
+<td>-80%</td>
+</tr>
+</tbody>
+</table>
+<h3 id="git-history">Git History</h3>
 <table>
 <thead>
 <tr>
@@ -1376,11 +1698,39 @@ discord-webhook&gt;=1.0.0            # Notifications (optional)
 <td><code>5b92710</code></td>
 <td>Phase 4.1-4.2: L2 recorder + OB replay backtester (222 tests)</td>
 </tr>
+<tr>
+<td><code>eb053a0</code></td>
+<td>Phase 5.2: DynamicSizer — adaptive order sizing (257 tests)</td>
+</tr>
+<tr>
+<td><code>4d0f3c3</code></td>
+<td>fix: scale max_daily_loss with capital (5%)</td>
+</tr>
+<tr>
+<td><code>7c639f7</code></td>
+<td>feat: --compound flag for daily PnL reinvestment</td>
+</tr>
+<tr>
+<td><code>881a63d</code></td>
+<td>feat: daily auto-reoptimizer + live_params.json</td>
+</tr>
+<tr>
+<td><code>6b16526</code></td>
+<td>feat: hot param reload — zero downtime param updates</td>
+</tr>
+<tr>
+<td><code>9ee9b63</code></td>
+<td>feat: supervisor risk adjustments + 66 tests (dual control)</td>
+</tr>
+<tr>
+<td><code>445366d</code></td>
+<td>feat: compound + supervisor separation (base capital only)</td>
+</tr>
 </tbody>
 </table>
 <hr />
-<h2>15. Success Criteria</h2>
-<h3>Phase 1 (Basic MM — BTC only) ✅ DONE</h3>
+<h2 id="15-success-criteria">15. Success Criteria</h2>
+<h3 id="phase-1-basic-mm-btc-only-done">Phase 1 (Basic MM — BTC only) ✅ DONE</h3>
 <ul>
 <li>[x] Bot runs 24/7 without crashes for 48h</li>
 <li>[x] Positive PnL after 1 week</li>
@@ -1389,21 +1739,33 @@ discord-webhook&gt;=1.0.0            # Notifications (optional)
 <li>[x] Dead man's switch tested and working</li>
 <li>[x] Discord notifications working</li>
 </ul>
-<h3>Phase 2 (Multi-Asset + Adaptive) ✅ DONE</h3>
+<h3 id="phase-2-multi-asset-adaptive-done">Phase 2 (Multi-Asset + Adaptive) ✅ DONE</h3>
 <ul>
 <li>[x] 3+ assets running simultaneously</li>
 <li>[x] Volatility adjustment reduces drawdown</li>
 <li>[x] Directional bias improves PnL by 10%+</li>
 <li>[x] Monthly ROI &gt; 5% of capital</li>
 </ul>
-<h3>Phase 3 (Multi-Exchange + Arb) ⏭️ SKIPPED</h3>
+<h3 id="phase-4-optimization-ml-done">Phase 4 (Optimization + ML) ✅ DONE</h3>
 <ul>
-<li>[ ] Cross-exchange arb profitable</li>
-<li>[ ] Funding rate arb generates passive income</li>
-<li>[ ] Total monthly ROI &gt; 10% of capital</li>
+<li>[x] ML fill prediction improves PnL</li>
+<li>[x] Auto-tuner improves Sharpe</li>
+<li>[x] L2 order book recorder working</li>
+<li>[x] Order book replay backtester (~90% realism)</li>
+</ul>
+<h3 id="phase-5-production-systems-supervisor-done">Phase 5 (Production Systems + Supervisor) ✅ DONE</h3>
+<ul>
+<li>[x] Partial fills implemented (depth-based, 30% threshold)</li>
+<li>[x] DynamicSizer working (76 tests)</li>
+<li>[x] Compound mode BTC/ETH (+56%/+66% vs flat)</li>
+<li>[x] Daily auto-reoptimizer (144 combos, drift safety 30%)</li>
+<li>[x] Hot param reload (zero downtime, ~1h interval)</li>
+<li>[x] Meta-supervisor dual control (capital + risk, +21.6% vs equal)</li>
+<li>[x] Supervisor + compound don't conflict (base capital separation)</li>
+<li>[x] 343 tests passing</li>
 </ul>
 <hr />
-<h2>16. FAQ</h2>
+<h2 id="16-faq">16. FAQ</h2>
 <p><strong>Q: Can HFT firms front-run us on HL?</strong><br />
 A: HL has ~200ms block time, so no sub-millisecond HFT. We compete fairly with other bots. On Binance/Bybit, HFT is faster.</p>
 <p><strong>Q: What happens if price gaps through our orders?</strong><br />
@@ -1414,8 +1776,5 @@ A: Grid bots place static orders at fixed price levels. Our MM bot dynamically a
 A: Yes, but use different subaccounts to isolate risk and avoid position conflicts. HL supports subaccounts.</p>
 <p><strong>Q: What's the minimum capital to start?</strong><br />
 A: $500 for BTC-only on HL. $2,000+ for multi-asset. $5,000+ for cross-exchange.</p>
-<div class="footer">
-  BotHL Project &bull; 2026-02-11 &bull; Leon + Claude
-</div>
 </body>
 </html>
