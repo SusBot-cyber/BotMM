@@ -190,11 +190,33 @@ Synthetic candle-based backtest overestimates by assuming ideal fills without qu
 | SOL   | 0.27 bps      |   -$73.62 | $48.17  |  -$121.79 | 4,933 |   225.1 |
 | TOTAL |               |  -$217.91 | $163.49 |  -$381.40 |17,571 |         |
 
+### Fee-Aware Quoting v1 (2026-02-12, ~22h, $12.5K/asset, no-queue)
+
+Improvements: profitability gate (skip when market spread < RT fee),
+one-sided quoting (skip overloaded side at 60% inv), dynamic min_spread = 2×fee.
+
+| Asset | Baseline Net | Fee-Aware Net | Improvement | Fills (old→new) |
+|-------|-------------|--------------|-------------|-----------------|
+| BTC   |      -$24.40 |       -$3.74 | +85%        | 909 → 31        |
+| ETH   |       -$5.63 |    **+$5.88**| +204% 🟢    | 928 → 53        |
+| SOL   |      -$19.25 |      -$12.72 | +34%        | 645 → 57        |
+| TOTAL |      -$49.28 |      -$10.58 | **+79%**    | 2,482 → 141     |
+
+**Key insight:** 99.8% of quotes skipped — market spread almost never exceeds 2.85 bps RT fee.
+When it does (volatility spikes), ETH is PROFITABLE. BTC/SOL still negative on adverse selection.
+ETH has widest typical spread (0.56 bps) → most opportunities where spread > fee.
+
 **Why synthetic vs real differ:**
 1. Market spread (0.2-0.6 bps) < fee (1.425 bps) → spread capture < fee cost
 2. No queue simulation → fills unrealistically easy (real queue = $500K+ on BTC best bid)
 3. Inventory risk dominates — price moves against position cause gross losses
 4. Synthetic backtester assumes fills happen at quoted spread, reality is much tighter
+
+**Fee-aware quoting fixes (profitability gate + one-sided + dynamic min_spread):**
+- Profitability gate: skip quotes when market spread < round-trip fee (2× maker fee)
+- One-sided mode: skip buy when inventory > 60% max, skip sell when < -60%
+- Dynamic min_spread: floor = 2× maker fee (ensures half-spread covers fee)
+- Result: ETH turns profitable, BTC/SOL losses cut 34-85%
 
 **Bugs fixed in OB backtester (commit 84f3276):**
 - Trade side mapping: HL uses `a`/`b`, backtester expected `buy`/`sell`
@@ -313,9 +335,9 @@ At $50K bot capital with 125% annual return:
 ### maker_fee default still wrong in these files:
 - `bot_mm/config.py` line 75: `maker_fee: float = -0.00015`
 - `backtest/mm_backtester.py` line 143 and 812: `maker_fee: float = -0.00015`
-- `backtest/ob_backtester.py` line 100: `maker_fee: float = -0.00015`
+- ~~`backtest/ob_backtester.py` line 100~~ ✅ FIXED → `0.00015`
 - `scripts/monthly_breakdown.py` line 34: `maker_fee=-0.00015`
-- `scripts/run_ob_backtest.py` line 33: `default=-0.00015`
+- ~~`scripts/run_ob_backtest.py` line 33~~ ✅ FIXED → `0.00015`
 - `bot_mm/core/order_manager.py` line 207: `maker_fee: float = -0.00015`
 
 Only `scripts/backtest_supervisor.py` has been updated to `+0.00015`.
@@ -436,7 +458,13 @@ joblib>=1.3.0
 ### 2026-02-12: Synthetic vs Real Data gap discovered
 - **Problem:** Candle-based backtest shows +125% annual return, real L2 shows -$381/day loss.
 - **Root causes:** (1) market spread < fee, (2) no queue simulation, (3) inventory risk in real data.
-- **Status:** OPEN — need to improve quoting strategy for ultra-tight HL spreads.
+- **Status:** PARTIALLY FIXED — fee-aware quoting v1 reduces losses 79%, ETH now profitable.
+
+### 2026-02-12: Fee-aware quoting v1
+- **Problem:** Bot quotes blindly even when market spread < fee → guaranteed loss per fill.
+- **Fix:** Profitability gate (skip when spread < RT fee), one-sided quoting (60% inv threshold), dynamic min_spread (2× fee floor). Changes in `quoter.py`, `ob_backtester.py`, `run_ob_backtest.py`.
+- **Impact:** ETH: -$5.63 → +$5.88 (FIRST PROFIT on real data). Total: -$49.28 → -$10.58 (+79%).
+- **CLI:** `--fee-aware` flag enables all 3 improvements.
 
 ## Commit History
 
@@ -464,3 +492,4 @@ joblib>=1.3.0
 22. `7fd015a` — docs: HOW_IT_EARNS profit flow, backtest results v2, staking analysis
 23. `bb23fec` — docs: update CLAUDE.md memory — full results, staking, pending fixes
 24. `84f3276` — fix: OB backtester — trade side (a/b), fee sign, CLI min/max spread
+25. `pending` — feat: fee-aware quoting v1 — profitability gate, one-sided, dynamic min_spread

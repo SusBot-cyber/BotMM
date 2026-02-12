@@ -38,6 +38,9 @@ class QuoteEngine:
         max_position_usd: float,
         book_imbalance: float = 0.0,
         directional_bias: float = 0.0,
+        maker_fee: float = 0.0,
+        skip_buy: bool = False,
+        skip_sell: bool = False,
     ) -> List[Quote]:
         """
         Calculate bid and ask quotes.
@@ -49,6 +52,9 @@ class QuoteEngine:
             max_position_usd: Maximum allowed position
             book_imbalance: -1 to +1 (positive = buy pressure)
             directional_bias: -1 to +1 from DirectionalBias (positive = bullish)
+            maker_fee: Maker fee as fraction (e.g. 0.00015). Used for profitability gate.
+            skip_buy: If True, don't generate buy quotes (one-sided mode)
+            skip_sell: If True, don't generate sell quotes (one-sided mode)
 
         Returns:
             List of Quote objects (bids + asks)
@@ -59,6 +65,12 @@ class QuoteEngine:
 
         spread_bps = self._calc_spread(volatility_pct, inventory_usd, max_position_usd)
         skew_bps = self._calc_skew(inventory_usd, max_position_usd, volatility_pct)
+
+        # Profitability gate: half-spread per side must exceed maker fee
+        fee_bps = abs(maker_fee) * 10000.0
+        if fee_bps > 0:
+            min_profitable_spread = fee_bps * 2.0  # round-trip cost
+            spread_bps = max(spread_bps, min_profitable_spread)
 
         # Add book imbalance effect (widen on heavy-flow side)
         imbalance_adj = book_imbalance * 0.3 * spread_bps
@@ -80,8 +92,10 @@ class QuoteEngine:
 
             size = size_usd / mid_price
 
-            quotes.append(Quote(price=bid_price, size=size, side="buy", level=level))
-            quotes.append(Quote(price=ask_price, size=size, side="sell", level=level))
+            if not skip_buy:
+                quotes.append(Quote(price=bid_price, size=size, side="buy", level=level))
+            if not skip_sell:
+                quotes.append(Quote(price=ask_price, size=size, side="sell", level=level))
 
         return quotes
 

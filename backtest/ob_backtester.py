@@ -67,6 +67,9 @@ class OBBacktestResult:
     # Daily breakdown
     daily_pnls: list = field(default_factory=list)
 
+    # Fee-aware stats
+    quotes_skipped: int = 0
+
 
 @dataclass
 class PendingOrder:
@@ -97,13 +100,14 @@ class OBBacktester:
     def __init__(
         self,
         quote_params: QuoteParams = None,
-        maker_fee: float = -0.00015,   # HL rebate
+        maker_fee: float = 0.00015,    # HL Tier 0 maker fee (cost)
         taker_fee: float = 0.00045,
         max_position_usd: float = 500.0,
         max_daily_loss: float = 50.0,
         capital: float = 1000.0,
         quote_refresh_snapshots: int = 1,
         use_queue_position: bool = True,
+        fee_aware: bool = False,
     ):
         self.quote_params = quote_params or QuoteParams()
         self.maker_fee = maker_fee
@@ -113,6 +117,7 @@ class OBBacktester:
         self.capital = capital
         self.quote_refresh_snapshots = quote_refresh_snapshots
         self.use_queue_position = use_queue_position
+        self.fee_aware = fee_aware
 
         self.engine = QuoteEngine(self.quote_params)
         self.inventory: Optional[InventoryManager] = None
@@ -136,6 +141,7 @@ class OBBacktester:
         self._adverse_count = 0
         self._equity_curve: List[float] = []
         self._daily_pnl_tracker: dict = {}
+        self._quotes_skipped = 0  # profitability gate counter
 
     def run(
         self,
@@ -171,6 +177,7 @@ class OBBacktester:
         self._adverse_count = 0
         self._equity_curve = [self.capital]
         self._daily_pnl_tracker = {}
+        self._quotes_skipped = 0
 
         # Build merged timeline
         from backtest.ob_loader import OrderBookLoader
@@ -237,6 +244,26 @@ class OBBacktester:
             self._pending_asks = []
             return
 
+        # Fee-aware mode: skip quoting when market spread < round-trip fee
+        if self.fee_aware:
+            fee_bps = abs(self.maker_fee) * 10000.0
+            rt_fee_bps = fee_bps * 2.0
+            if snapshot.spread_bps < rt_fee_bps:
+                self._pending_bids = []
+                self._pending_asks = []
+                self._quotes_skipped += 1
+                return
+
+        # One-sided quoting: skip the overloaded side
+        skip_buy = False
+        skip_sell = False
+        if self.fee_aware and self.inventory:
+            inv_ratio = inv_usd / self.max_position_usd if self.max_position_usd > 0 else 0
+            if inv_ratio > 0.6:
+                skip_buy = True   # Too long, don't buy more
+            elif inv_ratio < -0.6:
+                skip_sell = True  # Too short, don't sell more
+
         # Book imbalance from L2
         bid_depth = snapshot.bid_depth
         ask_depth = snapshot.ask_depth
@@ -249,6 +276,9 @@ class OBBacktester:
             inventory_usd=inv_usd,
             max_position_usd=self.max_position_usd,
             book_imbalance=book_imbalance,
+            maker_fee=self.maker_fee if self.fee_aware else 0.0,
+            skip_buy=skip_buy,
+            skip_sell=skip_sell,
         )
 
         # Replace all pending orders with new quotes
@@ -532,6 +562,7 @@ class OBBacktester:
                 if total_fills > 0 else 0.0
             ),
             daily_pnls=daily_pnls,
+            quotes_skipped=self._quotes_skipped,
         )
 
         return result
@@ -579,6 +610,12 @@ def print_results(result: OBBacktestResult, params: QuoteParams):
     print(f"  {'-'*45}")
     print(f"  {'Adverse fills':<30} {result.adverse_fills:>15}")
     print(f"  {'Adverse %':<30} {result.adverse_pct:>14.1f}%")
+
+    if hasattr(result, 'quotes_skipped') and result.quotes_skipped > 0:
+        print()
+        print(f"  {'Fee-Aware Mode':<30}")
+        print(f"  {'-'*45}")
+        print(f"  {'Quotes skipped (unprofitable)':<30} {result.quotes_skipped:>15,}")
 
     if result.duration_hours > 0:
         hourly_avg = result.net_pnl / result.duration_hours

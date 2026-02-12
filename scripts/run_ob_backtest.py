@@ -30,7 +30,7 @@ def main():
     parser.add_argument("--levels", type=int, default=1, help="Quote levels per side")
     parser.add_argument("--max-pos", type=float, default=500.0, help="Max position ($)")
     parser.add_argument("--capital", type=float, default=1000.0, help="Starting capital ($)")
-    parser.add_argument("--maker-fee", type=float, default=-0.00015, help="Maker fee (neg=rebate)")
+    parser.add_argument("--maker-fee", type=float, default=0.00015, help="Maker fee (positive=cost)")
     parser.add_argument("--taker-fee", type=float, default=0.00045, help="Taker fee")
     parser.add_argument("--refresh", type=int, default=1, help="Refresh quotes every N snapshots")
     parser.add_argument("--no-queue", action="store_true", help="Disable queue position simulation")
@@ -39,6 +39,8 @@ def main():
     parser.add_argument("--max-daily-loss", type=float, default=50.0, help="Max daily loss ($)")
     parser.add_argument("--min-spread", type=float, default=0.5, help="Min spread floor (bps)")
     parser.add_argument("--max-spread", type=float, default=20.0, help="Max spread cap (bps)")
+    parser.add_argument("--fee-aware", action="store_true",
+                        help="Enable fee-aware quoting: profitability gate, one-sided inventory, dynamic min spread")
     args = parser.parse_args()
 
     if not args.date and not (args.start and args.end):
@@ -79,6 +81,7 @@ def main():
         capital=args.capital,
         quote_refresh_snapshots=args.refresh,
         use_queue_position=not args.no_queue,
+        fee_aware=args.fee_aware,
     )
 
     result = backtester.run(snapshots, trades, symbol=args.symbol)
