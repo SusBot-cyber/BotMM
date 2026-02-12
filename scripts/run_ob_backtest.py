@@ -37,6 +37,8 @@ def main():
     parser.add_argument("--vol-mult", type=float, default=1.5, help="Volatility multiplier")
     parser.add_argument("--skew", type=float, default=0.5, help="Inventory skew factor")
     parser.add_argument("--max-daily-loss", type=float, default=50.0, help="Max daily loss ($)")
+    parser.add_argument("--min-spread", type=float, default=0.5, help="Min spread floor (bps)")
+    parser.add_argument("--max-spread", type=float, default=20.0, help="Max spread cap (bps)")
     args = parser.parse_args()
 
     if not args.date and not (args.start and args.end):
@@ -48,6 +50,8 @@ def main():
         num_levels=args.levels,
         vol_multiplier=args.vol_mult,
         inventory_skew_factor=args.skew,
+        min_spread_bps=args.min_spread,
+        max_spread_bps=args.max_spread,
     )
 
     loader = OrderBookLoader()

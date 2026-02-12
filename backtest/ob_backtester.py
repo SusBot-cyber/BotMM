@@ -283,8 +283,8 @@ class OBBacktester:
         if not self._current_snapshot:
             return
 
-        # Market sell → can fill our bids
-        if trade.side == "sell":
+        # Market sell (side='b' = aggressor sold / hit bid) → can fill our bids
+        if trade.side in ("sell", "b"):
             remaining_trade_size = trade.size
             for order in list(self._pending_bids):
                 if remaining_trade_size <= 0:
@@ -294,8 +294,8 @@ class OBBacktester:
                     self._execute_fill(order, trade, fill_size)
                     remaining_trade_size -= fill_size
 
-        # Market buy → can fill our asks
-        elif trade.side == "buy":
+        # Market buy (side='a' = aggressor bought / lifted ask) → can fill our asks
+        elif trade.side in ("buy", "a"):
             remaining_trade_size = trade.size
             for order in list(self._pending_asks):
                 if remaining_trade_size <= 0:
@@ -392,14 +392,14 @@ class OBBacktester:
             self._adverse_count += 1
 
         # Track equity
-        equity = self.capital + self.inventory.state.realized_pnl + self.inventory.state.total_fees
+        equity = self.capital + self.inventory.state.realized_pnl - self.inventory.state.total_fees
         self._equity_curve.append(equity)
 
         # Daily PnL
         date_key = trade.timestamp[:10] if len(trade.timestamp) >= 10 else "unknown"
         if date_key not in self._daily_pnl_tracker:
             self._daily_pnl_tracker[date_key] = 0.0
-        self._daily_pnl_tracker[date_key] += realized + fee
+        self._daily_pnl_tracker[date_key] += realized - fee
 
     def _estimate_queue_position(
         self, order: PendingOrder, snapshot: OrderBookSnapshot
@@ -467,7 +467,7 @@ class OBBacktester:
         # Gross PnL = realized PnL (excluding fees)
         gross_pnl = inv.state.realized_pnl if inv else 0.0
         total_fees = inv.state.total_fees if inv else 0.0
-        net_pnl = gross_pnl + total_fees
+        net_pnl = gross_pnl - total_fees
 
         # Drawdown from equity curve
         max_dd = 0.0

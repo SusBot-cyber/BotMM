@@ -23,7 +23,7 @@
 | Final Equity          |    $101,613 |      $112,670 |        |
 | Sharpe                |        16.4 |          16.1 |        |
 | Max Drawdown          |        $639 |          $735 |        |
-| Profitable Days       | 319/365 87% |  320/365 88% |        |
+| Profitable Days       | 319/365 87% |   320/365 88% |        |
 | Monthly Net           |      $4,301 |        $5,222 |        |
 | Daily Net             |        $141 |          $172 |        |
 | Fee % of Gross        |       26.6% |         26.6% |        |
