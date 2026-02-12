@@ -187,7 +187,9 @@ class ToxicityDetector:
         else:
             tox = self._overall_toxicity
         
-        if tox > self._high:
+        if tox > 0.8:
+            return 0.0   # Cancel quotes — extreme adverse selection
+        elif tox > self._high:
             return 1.5   # Widen 50%
         elif tox > self._medium:
             return 1.25  # Widen 25%

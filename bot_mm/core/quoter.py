@@ -135,11 +135,21 @@ class QuoteEngine:
     def _calc_skew(
         self, inventory_usd: float, max_position_usd: float, volatility_pct: float
     ) -> float:
-        """Calculate inventory skew in basis points."""
+        """Calculate inventory skew in basis points.
+        
+        Aggressive flattening: when |inventory| > 50% of max, skew multiplied
+        up to 2x to accelerate position reduction.
+        """
         if max_position_usd == 0:
             return 0.0
 
         inv_ratio = inventory_usd / max_position_usd  # -1 to +1
         skew = inv_ratio * self.params.inventory_skew_factor * volatility_pct * 10000
+
+        # Aggressive flattening when inventory > 60% of max
+        abs_ratio = abs(inv_ratio)
+        if abs_ratio > 0.6:
+            aggression = 1.0 + (abs_ratio - 0.6) * 1.5  # 1.0 at 60%, 1.6 at 100%
+            skew *= aggression
 
         return skew

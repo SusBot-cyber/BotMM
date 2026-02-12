@@ -22,6 +22,7 @@ from backtest.ob_loader import OrderBookSnapshot, TradeTick, L2Level
 from bot_mm.core.quoter import QuoteEngine, QuoteParams, Quote
 from bot_mm.core.inventory import InventoryManager
 from bot_mm.core.risk import RiskManager, RiskStatus
+from bot_mm.ml.toxicity import ToxicityDetector
 
 
 @dataclass
@@ -143,6 +144,12 @@ class OBBacktester:
         self._daily_pnl_tracker: dict = {}
         self._quotes_skipped = 0  # profitability gate counter
 
+        # Toxicity detector for adverse selection avoidance
+        self._toxicity = ToxicityDetector(
+            lookback_fills=30, measurement_bars=5,
+            ema_alpha=0.15, high_toxicity=0.6,
+        ) if fee_aware else None
+
     def run(
         self,
         snapshots: List[OrderBookSnapshot],
@@ -218,6 +225,11 @@ class OBBacktester:
         if self.inventory:
             self._inventory_samples.append(abs(self.inventory.position_usd))
 
+        # Update toxicity detector with price data
+        if self._toxicity and mid > 0:
+            atr = self._volatility_pct * mid if mid > 0 else 0.0
+            self._toxicity.on_bar(mid_price=mid, atr=atr)
+
         # Refresh quotes every N snapshots
         if self._snapshot_count % self.quote_refresh_snapshots == 0 and mid > 0:
             self._refresh_quotes(snapshot)
@@ -249,6 +261,15 @@ class OBBacktester:
             fee_bps = abs(self.maker_fee) * 10000.0
             rt_fee_bps = fee_bps * 2.0
             if snapshot.spread_bps < rt_fee_bps:
+                self._pending_bids = []
+                self._pending_asks = []
+                self._quotes_skipped += 1
+                return
+
+        # Toxicity gate: cancel quotes when adverse selection is extreme
+        if self._toxicity:
+            tox_mult = self._toxicity.get_spread_multiplier()
+            if tox_mult == 0.0:
                 self._pending_bids = []
                 self._pending_asks = []
                 self._quotes_skipped += 1
@@ -430,6 +451,16 @@ class OBBacktester:
         if date_key not in self._daily_pnl_tracker:
             self._daily_pnl_tracker[date_key] = 0.0
         self._daily_pnl_tracker[date_key] += realized - fee
+
+        # Feed toxicity detector
+        if self._toxicity and self._current_snapshot:
+            self._toxicity.on_fill(
+                side=order.side,
+                fill_price=order.price,
+                mid_price=self._current_snapshot.mid_price,
+                size=fill_size,
+                timestamp=trade.timestamp,
+            )
 
     def _estimate_queue_position(
         self, order: PendingOrder, snapshot: OrderBookSnapshot

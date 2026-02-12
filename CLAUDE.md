@@ -206,6 +206,30 @@ one-sided quoting (skip overloaded side at 60% inv), dynamic min_spread = 2×fee
 When it does (volatility spikes), ETH is PROFITABLE. BTC/SOL still negative on adverse selection.
 ETH has widest typical spread (0.56 bps) → most opportunities where spread > fee.
 
+### Quoting v2 (2026-02-12, ~19.5h, $12.5K/asset, no-queue, fee-aware)
+
+Added: toxicity-based quote pulling (cancel at tox>0.8), aggressive inventory skew
+(1.6x multiplier at 100% inventory), ToxicityDetector integrated in ob_backtester.
+
+| Asset | v1 Net   | **v2 Net**   | Improvement | Fills v1→v2 |
+|-------|----------|-------------|-------------|-------------|
+| BTC   |   -$3.74 |    **-$2.06**| +45% ✅     | 31 → 23     |
+| ETH   |   +$5.88 |    **+$3.80**| -35% ❌     | 53 → 51     |
+| SOL   |  -$12.72 |    **-$6.89**| +46% ✅     | 57 → 23     |
+| TOTAL |  -$10.58 |    **-$5.15**| **+51%**    | 141 → 97    |
+
+**Key findings from v2:**
+- BTC/SOL significantly better: aggressive skew reduces position buildup
+- ETH slightly worse: aggressive skew closes profitable trades too early
+- Total improvement: 51% (from -$10.58 to -$5.15)
+- BTC 16 buy vs 7 sell fills → got LONG → price dropped -1.9% → inventory loss
+
+**CRITICAL: This is only 1 day of data on a trending down day!**
+- BTC: -1.9%, ETH: -0.62%, SOL: -1.55% price change during backtest
+- MM bots lose on trending days, profit on mean-reverting days
+- Need 7+ days of data to judge performance — 1 day is NOT statistically significant
+- AWS recorder running, collecting data 24/7
+
 ### Lighter Premium Fee Simulation (2026-02-12, ~18h, $12.5K/asset, fee 0.004%, no-queue, fee-aware)
 
 Simulates performance if we traded on Lighter DEX with Premium account (0.4 bps maker fee).
@@ -528,26 +552,31 @@ joblib>=1.3.0
 - **Impact:** ETH: -$5.63 → +$5.88 (FIRST PROFIT on real data). Total: -$49.28 → -$10.58 (+79%).
 - **CLI:** `--fee-aware` flag enables all 3 improvements.
 
+### 2026-02-12: Quoting v2 — toxicity pulling + aggressive skew
+- **Problem:** BTC/SOL still losing despite fee-aware v1. Adverse selection on fills, weak inventory skew.
+- **Fix:** (1) Toxicity gate: cancel quotes when toxicity > 0.8 (return 0.0 multiplier). (2) Aggressive inventory skew: multiply by 1.0→1.6x when inv > 60% of max. (3) ToxicityDetector integrated into ob_backtester (on_fill, on_bar).
+- **Impact:** Total: -$10.58 → -$5.15 (+51%). BTC +45%, SOL +46%. ETH -35% (aggressive skew closes too early).
+- **Important:** Only 1 day of data on trending down day (BTC -1.9%). NOT statistically significant.
+
 ## Strategic Priority (as of 2026-02-12)
 
-### #1 PRIORITY: Fix Quoting Logic (NOT fees, NOT new exchanges)
+### #1 PRIORITY: Collect More Data + Validate on Multi-Day
 
-**Key learning from Lighter fee simulation:** Reducing fee from 1.425 → 0.4 bps only improved
-total PnL by 11% (-$10.58 → -$9.42). BTC actually got WORSE with more fills.
-**The bottleneck is adverse selection + inventory risk, not fees.**
+**Key learning from v2:** Further quoting improvements give diminishing returns on 1-day data.
+BTC/SOL losses are primarily from trending day (-1.9%, -1.55%), NOT quoting bugs.
+MM bots profit on mean-reverting days, lose on trending days — need 7+ days to judge.
 
-### What to fix next (in order):
-1. **Toxicity-based quote pulling** — `ml/toxicity.py` only widens spread (lines 176-197),
-   should also CANCEL quotes entirely when toxicity > 0.8. High-toxicity periods cause
-   the most adverse selection damage.
-2. **Wider base quotes for BTC** — market spread 0.2 bps but we need 4+ bps captured.
-   Consider quoting further from mid (3-5 bps) and only trading on volatility spikes.
-3. **Stronger inventory decay** — current skew factor 0.3 is too gentle. When position
-   builds up, should aggressively quote one side at tighter spread to flatten.
-4. **Time-based quote refresh** — current refresh every N snapshots. Should be event-driven:
-   refresh on price move > X bps, on fill, on inventory change.
-5. **Collect 7+ days of data** — current 22h is NOT statistically significant.
-   AWS recorder running, need patience.
+### What's done (quoting v2):
+1. ✅ **Toxicity-based quote pulling** — cancel when tox > 0.8
+2. ✅ **Aggressive inventory skew** — 1.6x at max inv, reduces position buildup
+3. ✅ **Profitability gate** — skip when spread < RT fee
+4. ✅ **One-sided quoting** — skip overloaded side at 60% inv
+
+### What to do next (in order):
+1. **Wait for 7+ days of L2 data** — AWS recorder running, ~1 day collected so far
+2. **Run multi-day backtest** — separate trending vs mean-reverting days
+3. **Per-asset parameter tuning** — BTC may need different params than ETH
+4. **Event-driven refresh** — refresh on price move > X bps (not every N snapshots)
 
 ### What NOT to do:
 - ❌ Build Lighter connector (fee is not the bottleneck)
@@ -582,4 +611,5 @@ total PnL by 11% (-$10.58 → -$9.42). BTC actually got WORSE with more fills.
 23. `bb23fec` — docs: update CLAUDE.md memory — full results, staking, pending fixes
 24. `84f3276` — fix: OB backtester — trade side (a/b), fee sign, CLI min/max spread
 25. `a4a4dd0` — feat: fee-aware quoting v1 — profitability gate, one-sided, dynamic min_spread
-26. `pending` — docs: DEX research results, Lighter fee simulation, strategic priority update
+26. `ed0eee1` — docs: DEX research results, Lighter fee simulation, strategic priorities
+27. `pending` — feat: quoting v2 — toxicity pulling, aggressive skew, ob_backtester integration
