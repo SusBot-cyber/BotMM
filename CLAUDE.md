@@ -578,6 +578,13 @@ MM bots profit on mean-reverting days, lose on trending days — need 7+ days to
 3. **Per-asset parameter tuning** — BTC may need different params than ETH
 4. **Event-driven refresh** — refresh on price move > X bps (not every N snapshots)
 
+### Strategy Expansion (see docs/STRATEGY_EXPANSION_PLAN.md):
+- **BotMM:** FR Spike Hunter ($15K) + Pairs/Stat Arb ($15K) + MM ($10K)
+- **BotHL:** Discord Copier + Liq Sniper ($10K) — kierunkowe/event-driven
+- **ON HOLD:** HLP Vault (za mało kapitału, wraca przy $100K+)
+- **BLOCKED:** Discord Copier (czeka na dostęp do TheLab Discord)
+- **BLOCKED:** BotHL directional improvements (czeka na dane z mmt.gg)
+
 ### What NOT to do:
 - ❌ Build Lighter connector (fee is not the bottleneck)
 - ❌ Research more exchanges (same problem everywhere)
@@ -612,4 +619,5 @@ MM bots profit on mean-reverting days, lose on trending days — need 7+ days to
 24. `84f3276` — fix: OB backtester — trade side (a/b), fee sign, CLI min/max spread
 25. `a4a4dd0` — feat: fee-aware quoting v1 — profitability gate, one-sided, dynamic min_spread
 26. `ed0eee1` — docs: DEX research results, Lighter fee simulation, strategic priorities
-27. `pending` — feat: quoting v2 — toxicity pulling, aggressive skew, ob_backtester integration
+27. `5eb6276` — feat: quoting v2 — toxicity pulling, aggressive skew, ob_backtester integration
+28. `pending` — docs: STRATEGY_EXPANSION_PLAN.md — 5-module multi-strategy plan (BotMM + BotHL)
