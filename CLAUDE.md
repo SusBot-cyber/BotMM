@@ -178,6 +178,29 @@ tests/                          # 343 tests across 16 test files
 | XRP        |    1.5 |  0.5 |  0.2 |  150 | $1,228 | OFF      |
 | ~~HYPE~~   |      — |    — |    — |    — |      — | *removed* |
 
+### Real L2 Data Backtest (2026-02-12, ~22h, fee 0.01425% after 5% HYPE staking)
+
+**CRITICAL FINDING:** Tick-level backtest on real orderbook data shows losses.
+Synthetic candle-based backtest overestimates by assuming ideal fills without queue position.
+
+| Asset | Market Spread | Gross PnL | Fees    | Net PnL   | Fills | Fills/h |
+|-------|---------------|-----------|---------|-----------|-------|---------|
+| BTC   | 0.20 bps      |   -$93.99 | $80.25  |  -$174.24 | 8,471 |   387.0 |
+| ETH   | 0.56 bps      |   -$50.30 | $35.07  |   -$85.37 | 4,167 |   190.3 |
+| SOL   | 0.27 bps      |   -$73.62 | $48.17  |  -$121.79 | 4,933 |   225.1 |
+| TOTAL |               |  -$217.91 | $163.49 |  -$381.40 |17,571 |         |
+
+**Why synthetic vs real differ:**
+1. Market spread (0.2-0.6 bps) < fee (1.425 bps) → spread capture < fee cost
+2. No queue simulation → fills unrealistically easy (real queue = $500K+ on BTC best bid)
+3. Inventory risk dominates — price moves against position cause gross losses
+4. Synthetic backtester assumes fills happen at quoted spread, reality is much tighter
+
+**Bugs fixed in OB backtester (commit 84f3276):**
+- Trade side mapping: HL uses `a`/`b`, backtester expected `buy`/`sell`
+- Fee sign: `net_pnl = gross - fees` (was `+ fees`, making costs look like income)
+- Added `--min-spread` and `--max-spread` CLI flags
+
 ## Key Parameters
 
 ```
@@ -404,6 +427,17 @@ joblib>=1.3.0
 - **Fix:** V3_CONSERVATIVE tuning: 45d window, 10%/3% cuts, min $5K, 1% daily mean-revert to equal.
 - **Impact:** +$4,500 (+9% PnL) vs V0 on 365d. +21.4% vs EQUAL baseline.
 
+### 2026-02-12: OB Backtester — trade side + fee sign bugs
+- **Problem 1:** HL trades use `a`/`b` sides, backtester checked `buy`/`sell` → zero fills.
+- **Problem 2:** `net_pnl = gross + fees` instead of `gross - fees` → costs showed as income.
+- **Fix:** Added `a`/`b` to side checks, corrected fee subtraction in net/equity/daily tracker.
+- **Impact:** Real L2 backtest now shows correct (negative) PnL. Critical for honest evaluation.
+
+### 2026-02-12: Synthetic vs Real Data gap discovered
+- **Problem:** Candle-based backtest shows +125% annual return, real L2 shows -$381/day loss.
+- **Root causes:** (1) market spread < fee, (2) no queue simulation, (3) inventory risk in real data.
+- **Status:** OPEN — need to improve quoting strategy for ultra-tight HL spreads.
+
 ## Commit History
 
 1. `e867e6f` — Initial BotMM: Avellaneda-Stoikov market maker with backtester
@@ -428,3 +462,5 @@ joblib>=1.3.0
 20. `c8b3b50` — feat: monthly breakdown scripts + backtest results snapshot (225d)
 21. `46f9875` — fix: HL maker fee +0.015% cost (not rebate), supervisor V3 tuning (+9% PnL)
 22. `7fd015a` — docs: HOW_IT_EARNS profit flow, backtest results v2, staking analysis
+23. `bb23fec` — docs: update CLAUDE.md memory — full results, staking, pending fixes
+24. `84f3276` — fix: OB backtester — trade side (a/b), fee sign, CLI min/max spread
