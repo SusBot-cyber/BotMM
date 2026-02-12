@@ -206,6 +206,31 @@ one-sided quoting (skip overloaded side at 60% inv), dynamic min_spread = 2×fee
 When it does (volatility spikes), ETH is PROFITABLE. BTC/SOL still negative on adverse selection.
 ETH has widest typical spread (0.56 bps) → most opportunities where spread > fee.
 
+### Lighter Premium Fee Simulation (2026-02-12, ~18h, $12.5K/asset, fee 0.004%, no-queue, fee-aware)
+
+Simulates performance if we traded on Lighter DEX with Premium account (0.4 bps maker fee).
+RT threshold drops from 2.85 bps (HL) to 0.8 bps → ~4x more fills qualify.
+
+| Asset | HL Fee-Aware Net | Lighter Sim Net | Fills (HL→Lighter) | Improvement |
+|-------|-----------------|----------------|-------------------|-------------|
+| BTC   |          -$3.74 |         -$7.55 | 31 → 115          | ❌ worse    |
+| ETH   |       **+$5.88**|      **+$4.54**| 53 → 205          | ~same 🟡    |
+| SOL   |         -$12.72 |         -$6.41 | 57 → 185          | +50% ✅     |
+| TOTAL |         -$10.58 |         -$9.42 | 141 → 505         | +11%        |
+
+**CRITICAL FINDING:** Lower fee does NOT magically fix profitability!
+- ETH: similar profit (~$5) but 4x more fills → more risk, similar return
+- BTC: WORSE with more fills — adverse selection dominates, more fills = more losses
+- SOL: improved 50% — fee was bigger factor here
+- **Root cause is NOT fees — it's adverse selection and inventory risk**
+- More fills at lower threshold = more exposure to toxic flow
+
+**Conclusion for Lighter Premium:**
+- NOT worth $1,500+ LIT staking cost based on current data
+- Fee reduction alone won't make the bot profitable
+- Need to fix QUOTING LOGIC first (toxicity, wider quotes, better inventory mgmt)
+- Only after fixing quoting → lower fees amplify existing edge
+
 **Why synthetic vs real differ:**
 1. Market spread (0.2-0.6 bps) < fee (1.425 bps) → spread capture < fee cost
 2. No queue simulation → fills unrealistically easy (real queue = $500K+ on BTC best bid)
@@ -222,6 +247,42 @@ ETH has widest typical spread (0.56 bps) → most opportunities where spread > f
 - Trade side mapping: HL uses `a`/`b`, backtester expected `buy`/`sell`
 - Fee sign: `net_pnl = gross - fees` (was `+ fees`, making costs look like income)
 - Added `--min-spread` and `--max-spread` CLI flags
+
+## DEX Research (Feb 2026)
+
+### Verdict: Stay on Hyperliquid, fix quoting logic
+
+| Platform       | Maker Fee | Hidden Cost            | Effective | SDK     | Status          |
+|----------------|-----------|------------------------|-----------|---------|-----------------|
+| **HL Tier 0**  | 1.50 bps  | —                      | 1.50 bps  | ✅ in bot| **CURRENT**    |
+| HL Tier 0+5%   | 1.425 bps | 10 HYPE ($300)         | 1.425 bps | ✅ in bot| recommended    |
+| HL Tier 1+10%  | 0.972 bps | 100 HYPE + $5M/14d vol | 0.972 bps | ✅ in bot| unreachable now|
+| Paradex UI     | 0 bps     | manual only, no API    | N/A       | —       | ❌ not viable  |
+| Paradex API    | 3.0 bps   | worse than HL!         | 3.0 bps   | Py<3.13 | ❌ REJECTED    |
+| Lighter Std    | 0 bps     | 200ms latency=6-12 bps | 6-12 bps  | ✅      | ❌ TRAP        |
+| Lighter Premium| 0.4 bps   | $1500+ LIT staking     | 0.4 bps   | ✅      | ❌ not worth it|
+| Drift          | -0.25 bps | Solana risk, low liq    | rebate    | —       | ⚠️ research    |
+| Vertex         | ☠️ DEAD   | Shut down Aug 2025     | N/A       | —       | ❌ DEAD        |
+
+### Why Lighter Premium is NOT worth it (data-driven):
+- Backtested with 0.4 bps fee: total PnL = -$9.42 vs HL -$10.58 → only 11% better
+- BTC actually WORSE with more fills (-$7.55 vs -$3.74) — adverse selection dominates
+- Fee is not the bottleneck — quoting logic is. Fix quotes first, then fees amplify edge.
+- $1,500+ LIT staking for $1/day improvement = 4+ year ROI. NOT viable.
+
+### Why Paradex API is NOT viable:
+- 0% fee is ONLY for retail UI users clicking buttons
+- Programmatic API: 0.03% maker (3 bps) = 2× worse than HL
+- SDK `paradex_py` requires Python <3.13, we have 3.14
+
+### Why Lighter Standard is a TRAP:
+- 0% fee sounds great, but 200ms latency on maker orders/cancels
+- In 200ms, price moves 6-12 bps on average → extreme adverse selection
+- Effectively paying 6-12 bps in invisible adverse selection cost
+
+### Vertex Protocol: DEAD (Aug 2025)
+- Shut down August 14, 2025, VRTX token sunset
+- Team moved to Ink (Kraken L2) — new product, not compatible
 
 ## Key Parameters
 
@@ -354,6 +415,7 @@ Only `scripts/backtest_supervisor.py` has been updated to `+0.00015`.
 - **Data path:** `/home/ec2-user/BotMM/data/orderbook/{SYMBOL}/{date}/`
 - **Storage:** ~60 MB/day, 8GB EBS → ~4 months before cleanup
 - **Deployed:** 2026-02-11
+- **Status (2026-02-12 19:30 UTC):** ✅ Running 23h, 590MB, 1 reconnect, load 0.00
 - **SSH:** `ssh -i deploy/botmm-key.pem ec2-user@63.178.163.203`
 - **Key file:** `deploy/botmm-key.pem` (gitignored via `*.pem`)
 
@@ -466,6 +528,33 @@ joblib>=1.3.0
 - **Impact:** ETH: -$5.63 → +$5.88 (FIRST PROFIT on real data). Total: -$49.28 → -$10.58 (+79%).
 - **CLI:** `--fee-aware` flag enables all 3 improvements.
 
+## Strategic Priority (as of 2026-02-12)
+
+### #1 PRIORITY: Fix Quoting Logic (NOT fees, NOT new exchanges)
+
+**Key learning from Lighter fee simulation:** Reducing fee from 1.425 → 0.4 bps only improved
+total PnL by 11% (-$10.58 → -$9.42). BTC actually got WORSE with more fills.
+**The bottleneck is adverse selection + inventory risk, not fees.**
+
+### What to fix next (in order):
+1. **Toxicity-based quote pulling** — `ml/toxicity.py` only widens spread (lines 176-197),
+   should also CANCEL quotes entirely when toxicity > 0.8. High-toxicity periods cause
+   the most adverse selection damage.
+2. **Wider base quotes for BTC** — market spread 0.2 bps but we need 4+ bps captured.
+   Consider quoting further from mid (3-5 bps) and only trading on volatility spikes.
+3. **Stronger inventory decay** — current skew factor 0.3 is too gentle. When position
+   builds up, should aggressively quote one side at tighter spread to flatten.
+4. **Time-based quote refresh** — current refresh every N snapshots. Should be event-driven:
+   refresh on price move > X bps, on fill, on inventory change.
+5. **Collect 7+ days of data** — current 22h is NOT statistically significant.
+   AWS recorder running, need patience.
+
+### What NOT to do:
+- ❌ Build Lighter connector (fee is not the bottleneck)
+- ❌ Research more exchanges (same problem everywhere)
+- ❌ Increase order size (amplifies losses on bad logic)
+- ❌ Go live before quoting is profitable on 7+ day backtest
+
 ## Commit History
 
 1. `e867e6f` — Initial BotMM: Avellaneda-Stoikov market maker with backtester
@@ -492,4 +581,5 @@ joblib>=1.3.0
 22. `7fd015a` — docs: HOW_IT_EARNS profit flow, backtest results v2, staking analysis
 23. `bb23fec` — docs: update CLAUDE.md memory — full results, staking, pending fixes
 24. `84f3276` — fix: OB backtester — trade side (a/b), fee sign, CLI min/max spread
-25. `pending` — feat: fee-aware quoting v1 — profitability gate, one-sided, dynamic min_spread
+25. `a4a4dd0` — feat: fee-aware quoting v1 — profitability gate, one-sided, dynamic min_spread
+26. `pending` — docs: DEX research results, Lighter fee simulation, strategic priority update
