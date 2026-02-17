@@ -8,7 +8,7 @@ Market making bot for crypto perpetuals on Hyperliquid (primary), with future su
 **Edge:** Spread capture + MM microstructure edge, directional bias from Kalman+QQE.
 **Fee:** HL maker fee = +0.015% (COST at base tier, rebate only at >$500M 14d vol).
 **Repository:** https://github.com/SusBot-cyber/BotMM
-**Status:** ✅ Phase 1-5 DONE — L2 Recorder deployed on AWS, ready for live MM testing
+**Status:** 🛑 SHELVED (2026-02-17) — Strategy economically unviable at HL fee tier. ~4.7% APY realistic vs 4-7% passive lending (zero effort). See Post-Mortem below.
 
 ---
 
@@ -613,47 +613,78 @@ joblib>=1.3.0
 
 ## Strategic Priority (as of 2026-02-17)
 
-### ✅ DONE: Multi-Day Validation (7 days L2 data)
+### 🛑 PROJECT SHELVED — Strategy Economically Unviable
 
-**Result:** Portfolio net +$13.93 on 6 days ($37.5K capital). ETH profitable (+$21.86), BTC breakeven (+$2.28), SOL negative (-$10.21).
+**Decision date:** 2026-02-17
+**Reason:** After 6-day multi-day backtest on real L2 data, returns are too low to justify active management.
 
-### What's done:
-1. ✅ **Toxicity-based quote pulling** — cancel when tox > 0.8
-2. ✅ **Aggressive inventory skew** — 1.6x at max inv, reduces position buildup
-3. ✅ **Profitability gate** — skip when spread < RT fee
-4. ✅ **One-sided quoting** — skip overloaded side at 60% inv
-5. ✅ **7-day L2 data collected** — AWS recorder running since 02-11
-6. ✅ **Multi-day backtest run** — 6 days, 130h, per-day breakdown
+### Final 6-Day Results (fee-aware v2, $12.5K/asset, 130h, no-queue)
 
-### #1 PRIORITY: Improve SOL + investigate 02-16 loss day
+| Asset | Net PnL | Fills | Sharpe | Daily Avg |
+|-------|---------|-------|--------|-----------|
+| ETH   | +$21.86 |    72 |  42.62 |    +$4.04 |
+| BTC   |  +$2.28 |    47 |   3.19 |    +$0.42 |
+| SOL   | -$10.21 |    18 |   0.00 |    -$1.88 |
+| TOTAL | +$13.93 |   137 |      — |    +$2.57 |
 
-**Key findings from 6-day test:**
-- ETH is clearly profitable — widest market spread (0.54 bps) gives most fill opportunities
-- BTC is breakeven — tightest spread (0.18 bps), very few profitable windows
-- SOL is losing — spread (0.22 bps) too tight, only 18 fills in 130h
-- 02-16 was universally bad (all 3 lost), 02-15 was universally good (all 3 won)
-- Fill count is very low (137 fills/130h) — extreme selectivity
+### ROI Analysis ($40K ETH-only, best case)
 
-### What to do next (in order):
-1. **Investigate 02-16** — what happened? Trending day? High vol? Need price data overlay
-2. **SOL parameter tuning** — wider spread, different skew, or drop entirely
-3. **Consider ETH-heavy allocation** — ETH Sharpe 42.6, BTC 3.19, SOL 0.0
-4. **Continue collecting data** — 14-30 days for production benchmark
-5. **Queue simulation** — current results assume instant fills (no queue), reality is harder
-6. **Event-driven refresh** — refresh on price move > X bps (not every N snapshots)
+| Scenariusz | Miesięcznie | APY | Wysiłek |
+|---|---|---|---|
+| MM bot (no queue, optimistic) | $387 | 11.8% | 🔴 wysoki |
+| MM bot (z queue, realistic) | $155 | 4.7% | 🔴 wysoki |
+| **Morpho USDC lending** | **$133-233** | **4-7%** | **🟢 zero** |
+| Aave/Compound USDC | $100-183 | 3-5.5% | 🟢 zero |
+| HL HLP Vault | $100-133 | 3-4% | 🟢 zero |
 
-### Strategy Expansion (see docs/STRATEGY_EXPANSION_PLAN.md):
-- **BotMM:** FR Spike Hunter ($15K) + Pairs/Stat Arb ($15K) + MM ($10K)
-- **BotHL:** Discord Copier + Liq Sniper ($10K) — kierunkowe/event-driven
-- **ON HOLD:** HLP Vault (za mało kapitału, wraca przy $100K+)
-- **BLOCKED:** Discord Copier (czeka na dostęp do TheLab Discord)
-- **BLOCKED:** BotHL directional improvements (czeka na dane z mmt.gg)
+### Why MM on HL Doesn't Work
 
-### What NOT to do:
-- ❌ Build Lighter connector (fee is not the bottleneck)
-- ❌ Research more exchanges (same problem everywhere)
-- ❌ Increase order size (amplifies losses on bad logic)
-- ❌ Go live before quoting is profitable on 7+ day backtest
+1. **Fee bottleneck:** HL maker fee = 1.5 bps. Market spread BTC=0.18, ETH=0.54, SOL=0.22 bps.
+   Spread < fee 99.7% of the time → bot idle almost always.
+2. **Micro profit per fill:** $0.30/fill on ETH, ~13 fills/day → $4/day on $12.5K
+3. **Capital doesn't scale fills:** More capital = bigger orders, NOT more opportunities.
+   Fills are gated by market spread vs fee, not capital.
+4. **Queue simulation OFF:** Real fills would be 50-70% harder (queue position on BTC best bid = $500K+).
+5. **Risk/reward asymmetry:** Active infra + monitoring + inventory risk for same APY as passive lending.
+
+### Post-Mortem: What We Learned
+
+**Synthetic vs Real gap:**
+- Candle-based backtest: +125% annual (fake — assumes ideal fills, no queue, no fee)
+- Real L2 backtest: +4.7% annual (realistic — fee-aware, real spreads, still no queue)
+- With queue: probably 2-3% annual → worse than lending
+
+**What worked:**
+- Fee-aware quoting: 91% improvement vs naive baseline
+- Toxicity detection: reduced adverse selection losses
+- L2 data infrastructure: recorder stable 7+ days on AWS
+
+**What didn't work:**
+- Spread capture at HL fee tier — market is too tight
+- Avellaneda-Stoikov model — designed for wider spread markets
+- Multi-asset diversification — all assets correlated on bad days (02-16)
+
+**When MM could work again:**
+- HL fee drops to rebate (>$500M 14d volume) — currently unreachable
+- Market spread widens (crisis, low liquidity) — unpredictable
+- Different exchange with rebate structure (Drift -0.25 bps?)
+- HFT-level infrastructure (colocation, sub-ms latency) — different game entirely
+
+### AWS L2 Recorder
+
+**Status:** Still running. Turn off to save costs or keep for future research.
+- Instance: t2.micro (~$8.50/month)
+- Data: 7 days collected, 1.2 GB
+- To stop: `ssh ... sudo systemctl stop botmm-recorder && sudo systemctl disable botmm-recorder`
+
+### Capital Reallocation Recommendation
+
+| Destination | Amount | Expected APY | Notes |
+|---|---|---|---|
+| Morpho USDC (Base) | $20K | 4-7% | Best risk-adjusted DeFi yield |
+| Aave V3 USDC (Base) | $10K | 3-5.5% | Battle-tested, lowest risk |
+| HL HLP Vault | $5K | 3-4% | Only small allocation — volatile, can go negative |
+| Reserve (USDC) | $5K | 0% | Dry powder for opportunities |
 
 ## Commit History
 
@@ -684,4 +715,6 @@ joblib>=1.3.0
 25. `a4a4dd0` — feat: fee-aware quoting v1 — profitability gate, one-sided, dynamic min_spread
 26. `ed0eee1` — docs: DEX research results, Lighter fee simulation, strategic priorities
 27. `5eb6276` — feat: quoting v2 — toxicity pulling, aggressive skew, ob_backtester integration
-28. `pending` — docs: STRATEGY_EXPANSION_PLAN.md — 5-module multi-strategy plan (BotMM + BotHL)
+28. `c304e08` — docs: STRATEGY_EXPANSION_PLAN.md — 5-module multi-strategy plan (BotMM + BotHL)
+29. `1840401` — docs: multi-day L2 backtest results (6 days, 130h)
+30. `pending` — docs: project shelved — strategy economically unviable, post-mortem
