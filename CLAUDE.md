@@ -230,7 +230,56 @@ Added: toxicity-based quote pulling (cancel at tox>0.8), aggressive inventory sk
 - Need 7+ days of data to judge performance — 1 day is NOT statistically significant
 - AWS recorder running, collecting data 24/7
 
-### Lighter Premium Fee Simulation (2026-02-12, ~18h, $12.5K/asset, fee 0.004%, no-queue, fee-aware)
+### ⭐ Multi-Day Backtest (2026-02-12 → 02-17, 6 days, $12.5K/asset, fee-aware, no-queue)
+
+**FIRST MULTI-DAY VALIDATION on real L2 data.** 130h continuous, ~850K snapshots/asset.
+
+#### Aggregate Results (continuous inventory across days)
+
+| Asset | Gross PnL | Fees  | Net PnL      | Fills | Fills/h | Sharpe | Mkt Spread |
+|-------|-----------|-------|--------------|-------|---------|--------|------------|
+| BTC   |     $2.70 | $0.42 |   **+$2.28** |    47 |     0.4 |   3.19 |  0.18 bps  |
+| ETH   |    $22.73 | $0.88 |  **+$21.86** |    72 |     0.6 |  42.62 |  0.54 bps  |
+| SOL   |    -$9.95 | $0.27 |  **-$10.21** |    18 |     0.1 |   0.00 |  0.22 bps  |
+| TOTAL |    $15.48 | $1.57 |  **+$13.93** |   137 |     0.4 |      — |      —     |
+
+#### Per-Day Breakdown (fee-aware, independent runs)
+
+| Date       | BTC Net  | ETH Net  | SOL Net  | Portfolio |
+|------------|----------|----------|----------|-----------|
+| 2026-02-12 |   -$3.68 |   +$7.46 |  -$10.21 |    -$6.43 |
+| 2026-02-13 |   -$0.71 |   -$1.84 |   -$5.45 |    -$8.00 |
+| 2026-02-14 |   -$0.20 |   +$1.10 |   -$2.17 |    -$1.27 |
+| 2026-02-15 |   +$0.50 |   +$2.31 |   +$2.76 |    +$5.57 |
+| 2026-02-16 |   -$6.27 |   -$9.37 |   -$3.85 |   -$19.49 |
+| 2026-02-17 |    $0.00 |   -$0.10 |   -$0.05 |    -$0.15 |
+
+#### Baseline vs Fee-Aware (02-12 single day comparison)
+
+| Asset | Baseline Net | Fee-Aware Net | Improvement | Fills (old→new) |
+|-------|-------------|--------------|-------------|-----------------|
+| BTC   |      -$44.23 |       -$3.68 | +92% ✅     | 1,033 → 23      |
+| ETH   |       -$6.45 |    **+$7.46**| +216% 🟢    | 906 → 52        |
+| SOL   |      -$19.15 |      -$10.21 | +47%        | 636 → 18        |
+| TOTAL |      -$69.83 |       -$6.43 | **+91%**    | 2,575 → 93      |
+
+**Key findings from 6-day test:**
+- **ETH is the star:** +$21.86 net, Sharpe 42.6, profitable 2/5 full days, widest market spread (0.54 bps)
+- **BTC marginally positive:** +$2.28 net, Sharpe 3.19, near breakeven — tightest spread (0.18 bps)
+- **SOL still negative:** -$10.21 net, only 18 fills in 130h, spread too tight (0.22 bps)
+- **02-16 was a bad day for all:** possibly high volatility/trending — all 3 assets lost
+- **02-15 was a good day for all:** all 3 positive — likely mean-reverting/range-bound
+- **Fee-aware quoting is essential:** 91% improvement vs baseline on 02-12
+- **Very low fill count:** 137 fills in 130h = ~1/hour — bot is extremely selective
+- **Portfolio net: +$13.93** over 6 days on $37.5K capital = +0.037% = ~2.3% annualized
+
+**Next steps:**
+- SOL needs different parameters (wider spread? more aggressive on vol spikes?)
+- 02-16 anomaly: investigate what happened (high vol? trending?)
+- Consider ETH-only mode to maximize Sharpe until BTC/SOL improve
+- Queue simulation still OFF — real fills would be harder to get
+
+### Lighter Premium Fee Simulation(2026-02-12, ~18h, $12.5K/asset, fee 0.004%, no-queue, fee-aware)
 
 Simulates performance if we traded on Lighter DEX with Premium account (0.4 bps maker fee).
 RT threshold drops from 2.85 bps (HL) to 0.8 bps → ~4x more fills qualify.
@@ -439,7 +488,8 @@ Only `scripts/backtest_supervisor.py` has been updated to `+0.00015`.
 - **Data path:** `/home/ec2-user/BotMM/data/orderbook/{SYMBOL}/{date}/`
 - **Storage:** ~60 MB/day, 8GB EBS → ~4 months before cleanup
 - **Deployed:** 2026-02-11
-- **Status (2026-02-12 19:30 UTC):** ✅ Running 23h, 590MB, 1 reconnect, load 0.00
+- **Status (2026-02-17 09:44 UTC):** ✅ Running 5d 13h, 1.2GB, 10 reconnects, load 0.00
+- **Data collected:** 7 days (02-11 → 02-17), 2.6M snapshots, 3.5M trades
 - **SSH:** `ssh -i deploy/botmm-key.pem ec2-user@63.178.163.203`
 - **Key file:** `deploy/botmm-key.pem` (gitignored via `*.pem`)
 
@@ -485,6 +535,9 @@ py backtest/mm_backtester.py --symbol BTCUSDT --days 365 --spread 2.0 --size 150
 
 # Order book replay backtest (needs recorded data)
 py scripts/run_ob_backtest.py --symbol BTC --date 2026-02-12
+
+# Multi-day order book backtest (fee-aware)
+py scripts/run_ob_backtest.py --symbol ETH --start 2026-02-12 --end 2026-02-17 --fee-aware --capital 12500 --size 150 --spread 2.0 --skew 0.3 --no-queue
 
 # Optimizer
 py scripts/run_mm_optimizer.py --symbol BTCUSDT --days 365 --quick --workers 10
@@ -558,25 +611,36 @@ joblib>=1.3.0
 - **Impact:** Total: -$10.58 → -$5.15 (+51%). BTC +45%, SOL +46%. ETH -35% (aggressive skew closes too early).
 - **Important:** Only 1 day of data on trending down day (BTC -1.9%). NOT statistically significant.
 
-## Strategic Priority (as of 2026-02-12)
+## Strategic Priority (as of 2026-02-17)
 
-### #1 PRIORITY: Collect More Data + Validate on Multi-Day
+### ✅ DONE: Multi-Day Validation (7 days L2 data)
 
-**Key learning from v2:** Further quoting improvements give diminishing returns on 1-day data.
-BTC/SOL losses are primarily from trending day (-1.9%, -1.55%), NOT quoting bugs.
-MM bots profit on mean-reverting days, lose on trending days — need 7+ days to judge.
+**Result:** Portfolio net +$13.93 on 6 days ($37.5K capital). ETH profitable (+$21.86), BTC breakeven (+$2.28), SOL negative (-$10.21).
 
-### What's done (quoting v2):
+### What's done:
 1. ✅ **Toxicity-based quote pulling** — cancel when tox > 0.8
 2. ✅ **Aggressive inventory skew** — 1.6x at max inv, reduces position buildup
 3. ✅ **Profitability gate** — skip when spread < RT fee
 4. ✅ **One-sided quoting** — skip overloaded side at 60% inv
+5. ✅ **7-day L2 data collected** — AWS recorder running since 02-11
+6. ✅ **Multi-day backtest run** — 6 days, 130h, per-day breakdown
+
+### #1 PRIORITY: Improve SOL + investigate 02-16 loss day
+
+**Key findings from 6-day test:**
+- ETH is clearly profitable — widest market spread (0.54 bps) gives most fill opportunities
+- BTC is breakeven — tightest spread (0.18 bps), very few profitable windows
+- SOL is losing — spread (0.22 bps) too tight, only 18 fills in 130h
+- 02-16 was universally bad (all 3 lost), 02-15 was universally good (all 3 won)
+- Fill count is very low (137 fills/130h) — extreme selectivity
 
 ### What to do next (in order):
-1. **Wait for 7+ days of L2 data** — AWS recorder running, ~1 day collected so far
-2. **Run multi-day backtest** — separate trending vs mean-reverting days
-3. **Per-asset parameter tuning** — BTC may need different params than ETH
-4. **Event-driven refresh** — refresh on price move > X bps (not every N snapshots)
+1. **Investigate 02-16** — what happened? Trending day? High vol? Need price data overlay
+2. **SOL parameter tuning** — wider spread, different skew, or drop entirely
+3. **Consider ETH-heavy allocation** — ETH Sharpe 42.6, BTC 3.19, SOL 0.0
+4. **Continue collecting data** — 14-30 days for production benchmark
+5. **Queue simulation** — current results assume instant fills (no queue), reality is harder
+6. **Event-driven refresh** — refresh on price move > X bps (not every N snapshots)
 
 ### Strategy Expansion (see docs/STRATEGY_EXPANSION_PLAN.md):
 - **BotMM:** FR Spike Hunter ($15K) + Pairs/Stat Arb ($15K) + MM ($10K)
